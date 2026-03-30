@@ -1,0 +1,69 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Start Site Only",
+			"type": "shell",
+			"command": "zsh",
+			"args": [
+				"-lc",
+				"cd /Users/kyanozwartjes/machine_monitor && source .venv/bin/activate && { (sleep 2 && open 'http://localhost:8501') & streamlit run machine_sim.py; }"
+			],
+			"isBackground": true,
+			"group": "build"
+		},
+		{
+			"label": "Start ESP Monitor Only",
+			"type": "shell",
+			"command": "zsh",
+			"args": [
+				"-lc",
+				"cd /Users/kyanozwartjes/Documents/PlatformIO/Projects/machine_monitoring_esp32 && /Users/kyanozwartjes/.platformio/penv/bin/platformio device monitor -b 115200"
+			],
+			"isBackground": true,
+			"group": "build"
+		},
+		{
+			"label": "Upload ESP Only",
+			"type": "shell",
+			"command": "zsh",
+			"args": [
+				"-lc",
+				"cd /Users/kyanozwartjes/Documents/PlatformIO/Projects/machine_monitoring_esp32 && /Users/kyanozwartjes/.platformio/penv/bin/platformio run --target upload --upload-port /dev/cu.usbserial-0001"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Stop Site + ESP Processes",
+			"type": "shell",
+			"command": "zsh",
+			"args": [
+				"-lc",
+				"pkill -f \"streamlit run machine_sim.py\" || true; pkill -f \"platformio device monitor\" || true"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Start Dashboard + ESP32 Monitor",
+			"type": "shell",
+			"command": "zsh",
+			"args": [
+				"-lc",
+				"cd /Users/kyanozwartjes/machine_monitor && source .venv/bin/activate && { (sleep 2 && open 'http://localhost:8501') & streamlit run machine_sim.py; } & cd /Users/kyanozwartjes/Documents/PlatformIO/Projects/machine_monitoring_esp32 && /Users/kyanozwartjes/.platformio/penv/bin/platformio device monitor -b 115200"
+			],
+			"isBackground": true,
+			"group": "build"
+		},
+		{
+			"label": "Upload + Start Dashboard + Monitor",
+			"type": "shell",
+			"command": "zsh",
+			"args": [
+				"-lc",
+				"cd /Users/kyanozwartjes/Documents/PlatformIO/Projects/machine_monitoring_esp32 && /Users/kyanozwartjes/.platformio/penv/bin/platformio run --target upload --upload-port /dev/cu.usbserial-0001 && cd /Users/kyanozwartjes/machine_monitor && source .venv/bin/activate && { (sleep 2 && open 'http://localhost:8501') & streamlit run machine_sim.py; } & cd /Users/kyanozwartjes/Documents/PlatformIO/Projects/machine_monitoring_esp32 && /Users/kyanozwartjes/.platformio/penv/bin/platformio device monitor -b 115200"
+			],
+			"isBackground": true,
+			"group": "build"
+		}
+	]
+}

@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"name": "machine_monitor",
+			"path": "."
+		},
+		{
+			"name": "machine_monitoring_esp32",
+			"path": "../Documents/PlatformIO/Projects/machine_monitoring_esp32"
+		}
+	],
+	"settings": {}
+}
