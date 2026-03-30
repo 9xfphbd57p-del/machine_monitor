@@ -1,0 +1,2908 @@
+mport streamlit as st
+import streamlit.components.v1 as components
+import numpy as np
+import pandas as pd
+import time
+import json
+try:
+    from streamlit_autorefresh import st_autorefresh  # type: ignore[import-untyped]
+except ImportError:
+    # fallback if package not installed
+    def st_autorefresh(interval=1000, key=None):
+        pass
+import sys
+
+import plotly.graph_objects as go
+
+# --- Page Config (must be first) ---
+st.set_page_config(page_title="Smart Factory", layout="wide")
+
+# --- Load CSS once (cached) ---
+@st.cache_data
+def load_css():
+    return """
+<style>
+/* Background */
+.stApp {
+    background-color: #0f172a;
+    color: #f1f5f9;
+}
+
+/* Hide sidebar completely; navigation lives in the top bar */
+[data-testid="stSidebar"] {
+    display: none;
+}
+[data-testid="stSidebarNav"] {
+    display: none;
+}
+
+/* Cards */
+.card {
+    background-color: #1e293b;
+    padding: 20px;
+    border-radius: 16px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    margin-bottom: 15px;
+    color: #f1f5f9;
+    border: 1px solid #334155;
+}
+
+/* Welcome card - special styling */
+.welcome-card {
+    background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+    padding: 30px;
+    border-radius: 20px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    margin-bottom: 25px;
+    border: 1px solid #475569;
+    text-align: center;
+}
+
+/* Feature cards */
+.feature-card {
+    background-color: #1e293b;
+    padding: 20px;
+    border-radius: 12px;
+    text-align: center;
+    border: 1px solid #334155;
+    transition: all 0.3s ease;
+}
+
+.feature-card:hover {
+    background-color: #334155;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+}
+
+/* Status cards */
+.status-card {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    padding: 20px;
+    border-radius: 12px;
+    text-align: center;
+    border: 1px solid #334155;
+}
+
+/* Titles */
+h1, h2, h3 {
+    color: #f8fafc;
+    font-weight: 600;
+}
+
+/* Larger, more readable text */
+h1 {
+    font-size: 2.5rem !important;
+    margin-bottom: 1rem;
+}
+
+h2 {
+    font-size: 1.8rem !important;
+    margin-bottom: 0.8rem;
+}
+
+h3 {
+    font-size: 1.4rem !important;
+    margin-bottom: 0.6rem;
+}
+
+/* Better text contrast */
+p, span, div {
+    color: #e2e8f0;
+}
+
+/* Improve text contrast globally */
+p, span, label, .stMarkdown, .stText, .stButton {
+    color: #f1f5f9 !important;
+    font-size: 16px !important;
+    font-weight: 600 !important;
+}
+
+/* ── Apple-style verbindingspagina ─────────────────────────── */
+.connect-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px 0 40px;
+}
+
+.connect-title {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #f8fafc;
+    margin-bottom: 6px;
+    letter-spacing: -0.5px;
+}
+
+.connect-sub {
+    font-size: 0.95rem;
+    color: #94a3b8;
+    margin-bottom: 40px;
+}
+
+/* Pulserende zoekring */
+@keyframes pulse-ring {
+    0%   { transform: scale(1);   opacity: 0.8; }
+    50%  { transform: scale(1.18); opacity: 0.3; }
+    100% { transform: scale(1);   opacity: 0.8; }
+}
+
+.pulse-container {
+    position: relative;
+    width: 90px;
+    height: 90px;
+    margin: 0 auto 36px;
+}
+
+.pulse-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 3px solid #3b82f6;
+    animation: pulse-ring 1.8s ease-in-out infinite;
+}
+
+.pulse-ring-2 {
+    animation-delay: 0.6s;
+    opacity: 0.5;
+    transform: scale(1.3);
+}
+
+.pulse-icon {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.2rem;
+}
+
+/* Device kaart */
+.device-card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 18px 22px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    transition: background 0.2s;
+}
+
+.device-card:hover {
+    background: #263348;
+}
+
+.device-icon {
+    font-size: 1.8rem;
+    width: 48px;
+    height: 48px;
+    background: #0f172a;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.device-info { flex: 1; }
+
+.device-name {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #f1f5f9;
+    margin: 0 0 2px;
+}
+
+.device-ip {
+    font-size: 0.82rem;
+    color: #64748b;
+    margin: 0;
+}
+
+.device-connected-badge {
+    background: #16a34a;
+    color: white;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 99px;
+}
+
+/* Metrics */
+[data-testid="stMetric"] {
+    background-color: #1e293b;
+    padding: 15px;
+    border-radius: 12px;
+    color: #f8fafc;
+    border: 1px solid #334155;
+}
+
+/* Metric labels and values - larger and more readable */
+[data-testid="stMetric"] > div > div:nth-child(1) {
+    font-size: 0.9rem !important;
+    color: #cbd5e1 !important;
+}
+
+[data-testid="stMetric"] > div > div:nth-child(2) {
+    font-size: 1.8rem !important;
+    font-weight: bold !important;
+    color: #f1f5f9 !important;
+}
+
+[data-testid="stMetric"] > div > div:nth-child(3) {
+    font-size: 0.8rem !important;
+    color: #94a3b8 !important;
+}
+
+/* Sidebar */
+section[data-testid="stSidebar"] {
+    background-color: #020617;
+}
+
+section[data-testid="stSidebar"] * {
+    color: #f1f5f9 !important;
+}
+
+section[data-testid="stSidebar"] .stButton > button {
+    font-size: 20px !important;
+    padding: 10px 12px !important;
+    letter-spacing: 0.5px;
+}
+
+/* Buttons */
+.stButton > button {
+    background-color: #3b82f6 !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-weight: 500 !important;
+    transition: all 0.2s ease !important;
+}
+
+.stButton > button:hover {
+    background-color: #2563eb !important;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.25) !important;
+}
+
+/* Make buttons more readable */
+button, .stButton>button {
+    font-size: 14px !important;
+    font-weight: 700 !important;
+    background-color: #3b82f6 !important;
+    color: #ffffff !important;
+    border: none !important;
+    border-radius: 8px !important;
+    padding: 8px 16px !important;
+    transition: background-color 0.3s ease !important;
+}
+
+button:hover, .stButton>button:hover {
+    background-color: #2563eb !important;
+}
+
+/* Info boxes */
+.stAlert {
+    background-color: #1e293b !important;
+    color: #e2e8f0 !important;
+    border: 1px solid #334155 !important;
+    border-radius: 8px !important;
+}
+
+/* Remove ALL white chart backgrounds */
+div[data-testid="stPlotlyChart"],
+div[data-testid="stPlotlyChart"] > div,
+div[data-testid="stLineChart"],
+div[data-testid="stBarChart"] {
+    background-color: transparent !important;
+}
+
+canvas {
+    background-color: transparent !important;
+}
+
+/* Remove white blocks around charts */
+.element-container {
+    background-color: transparent !important;
+}
+
+/* Remove dataframe white background */
+[data-testid="stDataFrame"] {
+    background-color: #1e293b !important;
+}
+
+/* Better chart text readability */
+.gtitle, .xtitle, .ytitle {
+    fill: #f1f5f9 !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+}
+
+/* Legend text */
+.legendtext {
+    fill: #e2e8f0 !important;
+    font-size: 12px !important;
+}
+
+/* Axis labels */
+.xtick text, .ytick text {
+    fill: #cbd5e1 !important;
+    font-size: 11px !important;
+}
+
+/* Grid lines - subtle */
+.gridline {
+    stroke: transparent !important;
+}
+
+/* Plot background */
+.plot-bg {
+    fill: #0f172a !important;
+}
+
+/* Paper background */
+.paper-bg {
+    fill: #0f172a !important;
+}
+
+/* Hover labels - better contrast */
+.hoverlayer .hovertext {
+    background-color: #1e293b !important;
+    color: #f1f5f9 !important;
+    border: 1px solid #475569 !important;
+    border-radius: 4px !important;
+}
+
+/* Make text in charts more readable */
+text {
+    fill: #e2e8f0 !important;
+}
+
+/* Captions */
+.stCaption {
+    color: #94a3b8 !important;
+    font-size: 0.9rem !important;
+}
+
+/* Subheaders */
+.stSubheader {
+    color: #f1f5f9 !important;
+    font-weight: 600 !important;
+}
+
+/* Keyboard shortcuts help */
+.keyboard-shortcuts {
+    background-color: #1e293b;
+    padding: 10px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    font-size: 14px;
+    border-left: 4px solid #3b82f6;
+}
+
+.keyboard-shortcuts strong {
+    color: #3b82f6;
+}
+
+/* Fix selectbox text visibility */
+div[data-baseweb="select"] > div {
+    background-color: #1e293b !important;
+    color: #f8fafc !important;
+}
+
+/* Dropdown menu */
+ul {
+    background-color: #1e293b !important;
+    color: #f8fafc !important;
+}
+
+li {
+    color: #f8fafc !important;
+}
+
+/* Top navigation redesign */
+.top-nav-shell {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    background: linear-gradient(135deg, #111827 0%, #1f2937 100%);
+    border: 1px solid #334155;
+    border-radius: 18px;
+    padding: 14px;
+    margin: 8px 0 12px;
+    box-shadow: 0 12px 30px rgba(2, 6, 23, 0.35);
+}
+
+.top-nav-shell + div [data-testid="stButton"] button {
+    min-height: 52px !important;
+    border-radius: 14px !important;
+    border: 1px solid #334155 !important;
+    font-size: 1.02rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.01em !important;
+}
+
+.top-nav-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.top-nav-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.top-nav-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 52px;
+    padding: 0 18px;
+    border-radius: 14px;
+    border: 1px solid #334155;
+    text-decoration: none;
+    color: #e2e8f0;
+    background: rgba(15, 23, 42, 0.9);
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    transition: transform 0.15s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.top-nav-pill:hover {
+    transform: translateY(-1px);
+    color: #f8fafc;
+    background: rgba(30, 41, 59, 1);
+    border-color: #475569;
+}
+
+.top-nav-pill-active {
+    color: #0b1220;
+    background: linear-gradient(135deg, #60a5fa 0%, #34d399 100%);
+    border-color: transparent;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25);
+}
+
+.top-nav-action {
+    min-width: 92px;
+    min-height: 52px;
+    padding: 0 14px;
+    font-size: 0.98rem;
+}
+
+.top-nav-divider {
+    width: 1px;
+    height: 38px;
+    background: rgba(100, 116, 139, 0.45);
+}
+
+@media (max-width: 900px) {
+    .top-nav-shell {
+        padding: 10px;
+        border-radius: 14px;
+    }
+
+    .top-nav-pill {
+        min-height: 46px;
+        font-size: 0.9rem;
+        padding: 0 14px;
+    }
+
+    .top-nav-action {
+        min-width: 84px;
+        min-height: 46px;
+    }
+
+}
+</style>
+"""
+
+st.markdown(load_css(), unsafe_allow_html=True)
+
+def t(en, nl):
+    return en if st.session_state.get('language', 'EN') == 'EN' else nl
+
+# --- Global Settings ---
+if 'num_machines' not in st.session_state:
+    st.session_state.num_machines = 3
+if 'refresh_rate' not in st.session_state:
+    st.session_state.refresh_rate = 2
+if 'machine_names' not in st.session_state:
+    st.session_state.machine_names = [f"Machine {i}" for i in range(1, st.session_state.num_machines+1)]
+if 'page' not in st.session_state:
+    st.session_state.page = "Welcome"
+if 'welcome_shown' not in st.session_state:
+    st.session_state.welcome_shown = False
+if 'mode' not in st.session_state:
+    st.session_state.mode = 'Simulation'
+if 'connected_devices' not in st.session_state:
+    st.session_state.connected_devices = []
+if 'animation_tick_ms' not in st.session_state:
+    # UI animation heartbeat; smaller is smoother but costs more CPU.
+    st.session_state.animation_tick_ms = 300
+if 'last_data_poll_ts' not in st.session_state:
+    st.session_state.last_data_poll_ts = 0.0
+if 'target_currents' not in st.session_state:
+    st.session_state.target_currents = {}
+if 'smoothing_alpha' not in st.session_state:
+    # Lower alpha means smoother, less jumpy visuals.
+    st.session_state.smoothing_alpha = 0.15
+if 'smoothed_currents' not in st.session_state:
+    st.session_state.smoothed_currents = {}
+if 'gauge_display_values' not in st.session_state:
+    st.session_state.gauge_display_values = {}
+if 'gauge_alpha' not in st.session_state:
+    # Separate easing for gauges: lower values move more gradually.
+    st.session_state.gauge_alpha = 0.35
+if 'gauge_max_step' not in st.session_state:
+    # Maximum ampere change per refresh to avoid sudden jumps.
+    st.session_state.gauge_max_step = 0.45
+
+# Reset BLE scanlijst als je de verbindingspagina verlaat.
+if st.session_state.get('page') != "Device Connection":
+    st.session_state.ble_prov_devices = []
+
+NUM_MACHINES = st.session_state.num_machines
+
+# --- Modus: wordt beheerd via Settings, niet via sidebar ---
+# Zorg dat pending_mode afgehandeld wordt bij elke refresh
+if st.session_state.get('pending_mode') == 'Live' and st.session_state.get('device_connected', False):
+    st.session_state.mode = 'Live'
+    st.session_state.pending_mode = None
+
+def get_simulated_data():
+    # Stable simulated machine data, show smooth changes with occasional jumps.
+    if 'last_current_values' not in st.session_state:
+        st.session_state.last_current_values = {
+            f'current_{i}': np.random.uniform(1.5, 4.5) for i in range(1, st.session_state.num_machines + 1)
+        }
+
+    result = {}
+    for i in range(1, st.session_state.num_machines + 1):
+        key = f'current_{i}'
+        base = st.session_state.last_current_values[key]
+
+        drift = np.random.normal(0, 0.04)
+        if np.random.rand() < 0.05:
+            drift += np.random.normal(0, 0.18)
+
+        new_val = np.clip(base + drift, 0.5, 6.0)
+        st.session_state.last_current_values[key] = new_val
+        result[key] = new_val
+
+    return result
+
+
+def smooth_current_row(row, alpha=None):
+    """Apply EMA smoothing so charts/metrics update more fluidly."""
+    if alpha is None:
+        alpha = float(st.session_state.get('smoothing_alpha', 0.22))
+
+    smoothed = {}
+    state = st.session_state.get('smoothed_currents', {})
+    for key, value in row.items():
+        if not str(key).startswith('current_'):
+            smoothed[key] = value
+            continue
+        target = float(value)
+        prev = float(state.get(key, target))
+        val = prev + alpha * (target - prev)
+        state[key] = val
+        smoothed[key] = float(np.clip(val, 0.5, 6.0))
+
+    st.session_state.smoothed_currents = state
+    return smoothed
+
+
+def animate_gauge_value(gauge_key, target, alpha=None, max_step=None):
+    """Move a gauge value gradually toward target instead of jumping directly."""
+    if alpha is None:
+        alpha = float(st.session_state.get('gauge_alpha', 0.35))
+    if max_step is None:
+        max_step = float(st.session_state.get('gauge_max_step', 0.45))
+
+    state = st.session_state.get('gauge_display_values', {})
+    target = float(target)
+    prev = float(state.get(gauge_key, target))
+    delta = target - prev
+    step = float(np.clip(delta * alpha, -max_step, max_step))
+    current = prev + step
+    state[gauge_key] = float(np.clip(current, 0.0, 8.0))
+    st.session_state.gauge_display_values = state
+    return state[gauge_key]
+
+
+def build_device_endpoint(device_ip=None, device_port=None):
+    ip_address = (device_ip or st.session_state.get('device_ip') or '192.168.1.100').strip()
+    port = int(device_port or st.session_state.get('device_port') or 80)
+    return f"http://{ip_address}:{port}/data"
+
+
+PROV_CRED_UUID    = "12345678-1234-5678-1234-56789abcdef1"
+PROV_STATUS_UUID  = "12345678-1234-5678-1234-56789abcdef2"
+
+
+def get_current_wifi_ssid() -> str:
+    """Probeer het huidige WiFi SSID te detecteren (macOS)."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["networksetup", "-getairportnetwork", "en0"],
+            capture_output=True, text=True, timeout=3
+        )
+        if "Current Wi-Fi Network:" in result.stdout:
+            return result.stdout.split("Current Wi-Fi Network:")[-1].strip()
+    except Exception:
+        pass
+    return ""
+
+
+def get_current_wifi_password(ssid: str) -> str:
+    """Haal het WiFi-wachtwoord op uit de macOS Keychain voor het opgegeven SSID."""
+    import subprocess
+    if not ssid:
+        return ""
+    try:
+        result = subprocess.run(
+            ["security", "find-generic-password",
+             "-D", "AirPort network password", "-a", ssid, "-w"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return ""
+
+
+def ble_scan_for_provisioning(timeout: float = 6.0) -> list:
+    """
+    Scan via Bluetooth LE naar unprovisioned ESP32s (adverteren als 'MM_PROV').
+    Geeft lijst van dicts {'address': ..., 'name': ...} terug.
+    """
+    import asyncio
+    import threading
+
+    found = []
+
+    async def _scan():
+        from bleak import BleakScanner
+
+        devices = await BleakScanner.discover(timeout=timeout)
+        for d in devices:
+            if d.name == "MM_PROV":
+                found.append({"address": d.address, "name": d.name})
+
+    def _run():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(_scan())
+        except Exception:
+            pass
+        finally:
+            loop.close()
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout=timeout + 5)
+    return found
+
+
+def ble_provision_esp32(device_address: str, wifi_ssid: str, wifi_password: str,
+                        timeout: float = 35.0) -> str:
+    """
+    Verbind via BLE met een unprovisioned ESP32, stuur WiFi credentials,
+    en wacht op de terug-gestuurde IP als "OK:<ip>".
+    Geeft het IP-adres terug, of gooit een Exception bij fouten.
+    """
+    import asyncio
+    import ipaddress
+    import threading
+
+    result_ip: list[str] = []
+    exc_holder: list = [None]  # holds Exception | None
+
+    def _parse_provision_message(data: bytes):
+        msg = data.decode("utf-8", errors="ignore").strip()
+        if msg.startswith("OK:"):
+            candidate_ip = msg[3:].strip()
+            try:
+                ipaddress.ip_address(candidate_ip)
+                return "ok", candidate_ip
+            except Exception:
+                return "err", f"ERR: Ongeldig IP ontvangen: {candidate_ip}"
+        if msg.startswith("ERR"):
+            return "err", msg
+        return "ignore", msg
+
+    async def _provision():
+        from bleak import BleakClient
+
+        received_event = asyncio.Event()
+        error_msgs = []
+
+        async with BleakClient(device_address, timeout=15.0) as client:
+            def on_notify(characteristic, data):
+                status, value = _parse_provision_message(data)
+                if status == "ok":
+                    result_ip.append(value)
+                    received_event.set()
+                elif status == "err":
+                    error_msgs.append(value)
+                    received_event.set()
+
+            await client.start_notify(PROV_STATUS_UUID, on_notify)
+            creds = f"{wifi_ssid}|{wifi_password}"
+            await client.write_gatt_char(PROV_CRED_UUID, creds.encode("utf-8"), response=True)
+
+            try:
+                await asyncio.wait_for(received_event.wait(), timeout=timeout)
+            except asyncio.TimeoutError:
+                raise TimeoutError("ESP32 heeft niet gereageerd (time-out).")
+
+            await client.stop_notify(PROV_STATUS_UUID)
+
+        if error_msgs:
+            raise Exception(error_msgs[0])
+        if not result_ip:
+            raise Exception("Geen IP ontvangen van ESP32.")
+
+    def _run():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(_provision())
+        except Exception as e:
+            exc_holder[0] = e
+        finally:
+            loop.close()
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout=timeout + 20)
+
+    if exc_holder[0] is not None:
+        raise exc_holder[0]
+    if not result_ip:
+        raise TimeoutError("Provisioning thread time-out.")
+    return result_ip[0]
+
+
+def wait_for_device_endpoint(device_ip, device_port=80, attempts=12, delay_s=3, timeout=4):
+    """Wait until device endpoint responds with valid JSON payload."""
+    last_error = None
+    for _ in range(int(max(1, attempts))):
+        try:
+            return test_device_endpoint(device_ip, int(device_port), timeout=timeout)
+        except Exception as exc:
+            last_error = exc
+            time.sleep(max(0.1, float(delay_s)))
+    if last_error:
+        raise last_error
+    raise TimeoutError(f"Device {device_ip}:{device_port} not reachable")
+
+
+def activate_live_device_connection(device_ip, device_port=80, timeout=5):
+    """Test endpoint, persist connection, and switch dashboard to live mode."""
+    endpoint, payload, normalized = test_device_endpoint(device_ip, int(device_port), timeout=timeout)
+    save_connected_device(device_ip, int(device_port), endpoint)
+    st.session_state.mode = 'Live'
+    st.session_state.pending_mode = None
+    st.session_state.page = "Dashboard"
+    return endpoint, payload, normalized
+
+
+def scan_network_for_devices(subnet_base="192.168.1", timeout: float = 1.0, max_hosts=254):
+    """Auto-discover ESP32 devices: only accepts responses with ESP32 JSON fields."""
+    import requests
+    import threading
+
+    discovered = []
+    lock = threading.Lock()
+    ESP32_FIELDS = {"temperature", "speed", "energy"}  # minimale vingerafdruk
+
+    def check_ip(ip):
+        try:
+            response = requests.get(f"http://{ip}:80/data", timeout=timeout)
+            if response.status_code == 200:
+                try:
+                    data = response.json()
+                    if ESP32_FIELDS.issubset(data.keys()):
+                        with lock:
+                            discovered.append(ip)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    threads = []
+    host_count = max(1, min(int(max_hosts), 254))
+    for i in range(1, host_count + 1):
+        ip = f"{subnet_base}.{i}"
+        thread = threading.Thread(target=check_ip, args=(ip,), daemon=True)
+        threads.append(thread)
+        thread.start()
+
+    for thread in threads:
+        thread.join(timeout=max(timeout * 3, 4))
+
+    return discovered
+
+
+def test_device_endpoint(device_ip, device_port, timeout=5):
+    import requests
+
+    endpoint = build_device_endpoint(device_ip, device_port)
+    response = requests.get(endpoint, timeout=timeout)
+    response.raise_for_status()
+    payload = response.json()
+    normalized = normalize_live_payload(payload)
+    return endpoint, payload, normalized
+
+
+def configure_live_layout_from_connections():
+    """Set machine count and labels from connected ESP32 devices."""
+    devices = st.session_state.get("connected_devices", [])
+    device_count = len(devices)
+
+    if device_count <= 0:
+        return
+
+    st.session_state.num_machines = device_count
+    st.session_state.machine_names = [
+        device.get("name") or f"ESP32 {index + 1}"
+        for index, device in enumerate(devices)
+    ]
+
+    current_df = st.session_state.get("df")
+
+    new_df = {}
+    for index in range(1, device_count + 1):
+        col = f"current_{index}"
+        if isinstance(current_df, pd.DataFrame) and not current_df.empty and col in current_df.columns:
+            new_df[col] = current_df[col].tail(100).astype(float).reset_index(drop=True)
+        else:
+            # Start live charts empty until first real ESP32 measurements arrive.
+            new_df[col] = pd.Series(dtype="float64")
+
+    st.session_state.df = pd.DataFrame(new_df)
+    if isinstance(current_df, pd.DataFrame) and "timestamp" in current_df.columns:
+        timestamp_series = pd.Series(pd.to_datetime(current_df["timestamp"], errors="coerce"))
+        st.session_state.df["timestamp"] = timestamp_series.tail(len(st.session_state.df)).reset_index(drop=True)
+    elif not st.session_state.df.empty:
+        st.session_state.df["timestamp"] = pd.date_range(
+            end=pd.Timestamp.now(),
+            periods=len(st.session_state.df),
+            freq=f"{int(st.session_state.refresh_rate)}s",
+        )
+    else:
+        st.session_state.df["timestamp"] = pd.Series(dtype="datetime64[ns]")
+    if not st.session_state.df.empty:
+        st.session_state.last_current_values = {
+            f"current_{index}": float(st.session_state.df[f"current_{index}"].iloc[-1])
+            for index in range(1, device_count + 1)
+        }
+    else:
+        st.session_state.last_current_values = {
+            f"current_{index}": 0.5 for index in range(1, device_count + 1)
+        }
+
+    # Clear paused chart snapshots so charts immediately reflect the new shape.
+    for chart_key in [
+        "dashboard_realtime",
+        "dashboard_distribution",
+        "factory_analysis",
+        "ai_table",
+    ]:
+        st.session_state[f"{chart_key}_snapshot"] = None
+
+
+def save_connected_device(device_ip, device_port, endpoint):
+    device_ip = str(device_ip).strip()
+    device_port = int(device_port)
+    device_name = f"ESP32 {device_ip.split('.')[-1]}"
+
+    devices = st.session_state.get("connected_devices", [])
+    existing_index = next(
+        (index for index, device in enumerate(devices)
+         if device.get("ip") == device_ip and int(device.get("port", 80)) == device_port),
+        None,
+    )
+
+    device_record = {
+        "ip": device_ip,
+        "port": device_port,
+        "endpoint": endpoint,
+        "name": device_name,
+    }
+    if existing_index is None:
+        devices.append(device_record)
+    else:
+        devices[existing_index] = device_record
+
+    st.session_state.connected_devices = devices
+    # Reset df so simulation history doesn't pollute live averages
+    st.session_state.pop("df", None)
+    st.session_state.pop("last_current_values", None)
+    configure_live_layout_from_connections()
+
+    # Legacy single-device fields kept for compatibility in existing UI pieces.
+    st.session_state.device_ip = device_ip
+    st.session_state.device_port = device_port
+    st.session_state.device_endpoint = endpoint
+    st.session_state.device_connected = len(st.session_state.connected_devices) > 0
+    st.session_state.last_live_error = None
+    st.session_state.last_connected_device = f"{device_ip}:{device_port}"
+    log_event("Connection", f"Device connected - Endpoint: {endpoint}")
+
+
+def has_connected_device():
+    return len(st.session_state.get("connected_devices", [])) > 0
+
+
+def clear_device_connection_state():
+    st.session_state.connected_devices = []
+    st.session_state.device_connected = False
+    st.session_state.last_live_error = None
+
+    for key in [
+        "device_endpoint",
+        "device_ip",
+        "device_port",
+        "last_connected_device",
+        "last_device_payload",
+        "last_live_current",
+        "last_voltage",
+    ]:
+        st.session_state.pop(key, None)
+
+
+def disconnect_device(device_ip: str):
+    """Remove a device from the connected list and reconfigure layout."""
+    devices = st.session_state.get("connected_devices", [])
+    devices = [d for d in devices if d.get("ip") != device_ip]
+    if not devices:
+        clear_device_connection_state()
+        st.session_state.mode = "Simulation"
+    else:
+        st.session_state.connected_devices = devices
+        st.session_state.device_connected = True
+        primary_device = devices[0]
+        st.session_state.device_ip = primary_device.get("ip")
+        st.session_state.device_port = int(primary_device.get("port", 80))
+        st.session_state.device_endpoint = primary_device.get("endpoint") or build_device_endpoint(
+            primary_device.get("ip"),
+            primary_device.get("port", 80),
+        )
+        configure_live_layout_from_connections()
+    log_event("Connection", f"Device disconnected: {device_ip}")
+
+
+def get_local_subnet_candidates():
+    import socket
+
+    candidates = []
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.connect(("8.8.8.8", 80))
+        local_ip = sock.getsockname()[0]
+        sock.close()
+        parts = local_ip.split(".")
+        if len(parts) == 4:
+            candidates.append(f"{parts[0]}.{parts[1]}.{parts[2]}")
+    except Exception:
+        pass
+
+    candidates.extend(["192.168.68", "192.168.1", "192.168.0"])
+
+    unique = []
+    for subnet in candidates:
+        if subnet not in unique:
+            unique.append(subnet)
+    return unique
+
+
+def normalize_live_payload(payload):
+    """Normalize arbitrary live payloads to current_1..current_N values."""
+    machine_count = int(st.session_state.get("num_machines", 1))
+    expected_keys = [f"current_{i}" for i in range(1, machine_count + 1)]
+
+    if not isinstance(payload, dict) or not payload:
+        raise ValueError("Invalid live payload: expected non-empty object")
+
+    if "voltage" in payload and isinstance(payload.get("voltage"), (int, float)):
+        st.session_state.last_voltage = float(payload["voltage"])
+
+    if all(key in payload for key in expected_keys):
+        return {
+            key: float(np.clip(float(payload[key]), 0.5, 6.0))
+            for key in expected_keys
+        }
+
+    if isinstance(payload.get("current"), (int, float)):
+        return {"current_1": float(np.clip(float(payload["current"]), 0.5, 6.0))}
+
+    esp32_keys = ["temperature", "speed", "energy"]
+    if all(key in payload for key in esp32_keys):
+        temp = float(payload["temperature"])
+        speed = float(payload["speed"])
+        energy = float(payload["energy"])
+
+        mapped_values = [
+            float(np.clip((temp - 15) / 65 * 3.5 + 0.5, 0.5, 4.0)),
+            float(np.clip((speed - 500) / 2500 * 5.0 + 1.0, 1.0, 6.0)),
+            float(np.clip(energy / 40.0, 0.5, 6.0)),
+        ]
+
+        if machine_count <= 1:
+            return {"current_1": mapped_values[-1]}
+
+        return {
+            f"current_{index}": mapped_values[min(index - 1, len(mapped_values) - 1)]
+            for index in range(1, machine_count + 1)
+        }
+
+    numeric_values = [
+        float(value) for value in payload.values() if isinstance(value, (int, float))
+    ]
+    if numeric_values:
+        return {
+            f"current_{index}": float(np.clip(numeric_values[min(index - 1, len(numeric_values) - 1)], 0.5, 6.0))
+            for index in range(1, machine_count + 1)
+        }
+
+    raise ValueError("Unsupported live payload received from device")
+
+
+def build_live_fallback_row():
+    """Return a stable fallback row from last known live values."""
+    smoothed = st.session_state.get("smoothed_currents", {})
+    last_values = st.session_state.get("last_current_values", {})
+    machine_count = int(st.session_state.get("num_machines", 1))
+    fallback = {}
+    for index in range(1, machine_count + 1):
+        key = f"current_{index}"
+        candidate = smoothed.get(
+            key,
+            last_values.get(key, st.session_state.get("last_live_current", 0.5)),
+        )
+        fallback[key] = float(np.clip(float(candidate), 0.5, 6.0))
+    return fallback
+
+
+def get_connected_devices_from_state():
+    """Resolve connected devices, including legacy single-device state."""
+    devices = st.session_state.get("connected_devices", [])
+
+    if not devices and st.session_state.get("device_ip"):
+        devices = [{
+            "ip": st.session_state.get("device_ip"),
+            "port": int(st.session_state.get("device_port", 80)),
+            "name": f"ESP32 {str(st.session_state.get('device_ip')).split('.')[-1]}",
+        }]
+        st.session_state.connected_devices = devices
+        configure_live_layout_from_connections()
+
+    return devices
+
+
+def extract_device_current(payload, normalized):
+    """Select the best current value for one connected device."""
+    if isinstance(payload.get("current"), (int, float)):
+        return float(np.clip(float(payload["current"]), 0.5, 6.0))
+    if isinstance(payload.get("energy"), (int, float)):
+        return float(np.clip(float(payload["energy"]) / 40.0, 0.5, 6.0))
+    if normalized:
+        return float(next(iter(normalized.values())))
+    raise ValueError("No current value found in normalized payload")
+
+
+def poll_connected_devices(timeout):
+    """Poll all connected devices and return (row, success_count, errors)."""
+    devices = get_connected_devices_from_state()
+    if not devices:
+        raise ValueError("No connected devices")
+
+    row = {}
+    errors = []
+    latest_payload = None
+    latest_endpoint = None
+    successful_devices = 0
+
+    for index, device in enumerate(devices, start=1):
+        key = f"current_{index}"
+        ip = device.get("ip")
+        port = int(device.get("port", 80))
+
+        try:
+            endpoint, payload, normalized = test_device_endpoint(ip, port, timeout=timeout)
+            value = extract_device_current(payload, normalized)
+            row[key] = value
+
+            if index == 1:
+                st.session_state.last_live_current = value
+
+            device["endpoint"] = endpoint
+            latest_payload = payload
+            latest_endpoint = endpoint
+            successful_devices += 1
+        except Exception as exc:
+            previous = st.session_state.get("last_live_current") if index == 1 else None
+            if previous is None:
+                previous = st.session_state.get("last_current_values", {}).get(key, 0.5)
+            row[key] = float(np.clip(float(previous), 0.5, 6.0))
+            errors.append(f"{ip}:{port} -> {exc}")
+
+    st.session_state.connected_devices = devices
+    if latest_endpoint:
+        st.session_state.device_endpoint = latest_endpoint
+    if latest_payload is not None:
+        st.session_state.last_device_payload = latest_payload
+
+    return row, successful_devices, errors
+
+
+def get_live_data():
+    """Unified entry point for receiving simulation/live current data."""
+    if st.session_state.mode == "Simulation":
+        return get_simulated_data()
+
+    timeout = float(st.session_state.get("connection_timeout", 5))
+
+    try:
+        row, successful_devices, errors = poll_connected_devices(timeout=timeout)
+        st.session_state.device_connected = successful_devices > 0
+        st.session_state.last_live_error = "; ".join(errors) if errors else None
+        return row
+    except Exception as exc:
+        st.session_state.device_connected = False
+        st.session_state.last_live_error = str(exc)
+        print("Error fetching live data:", exc, file=sys.stderr)
+        return build_live_fallback_row()
+
+# --- Safe defaults ---
+if "anomalies" not in st.session_state:
+    st.session_state.anomalies = []
+
+if "bottlenecks" not in st.session_state:
+    st.session_state.bottlenecks = []
+
+if "event_history" not in st.session_state:
+    st.session_state.event_history = []
+
+# Helper function to log events
+def log_event(event_type, message):
+    import datetime
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    event = {"timestamp": timestamp, "type": event_type, "message": message}
+    st.session_state.event_history.insert(0, event)  # Add to beginning (newest first)
+    # Keep only last 100 events
+    if len(st.session_state.event_history) > 100:
+        st.session_state.event_history = st.session_state.event_history[:100]
+
+# Initialiseer dataframe — in live modus beginnen we leeg zodat nooit
+# willekeurige simulatiedata de grafieken vervuilt.
+if "df" not in st.session_state:
+    data = {}
+    is_live = (
+        st.session_state.get('mode') == 'Live'
+        and len(st.session_state.get('connected_devices', [])) > 0
+    )
+    for i in range(1, st.session_state.num_machines + 1):
+        if is_live:
+            data[f"current_{i}"] = []  # leeg — wordt gevuld door echte ESP32-data
+        else:
+            seed = np.random.uniform(1.5, 4.5)
+            steps = np.random.normal(loc=0.0, scale=0.05, size=100)
+            data[f"current_{i}"] = np.clip(seed + np.cumsum(steps), 0.5, 6.0)
+    st.session_state.df = pd.DataFrame(data)
+    if not is_live and not st.session_state.df.empty:
+        st.session_state.df["timestamp"] = pd.date_range(
+            end=pd.Timestamp.now(),
+            periods=len(st.session_state.df),
+            freq=f"{int(st.session_state.refresh_rate)}s",
+        )
+    else:
+        st.session_state.df["timestamp"] = pd.Series(dtype="datetime64[ns]")
+
+    if not is_live:
+        st.session_state.last_current_values = {
+            f"current_{i}": float(st.session_state.df[f"current_{i}"].iloc[-1])
+            for i in range(1, st.session_state.num_machines + 1)
+        }
+
+df = st.session_state.df
+
+NAV_ALLOWED_PAGES = {
+    "Welcome",
+    "Dashboard",
+    "Factory Analysis",
+    "AI Insights",
+    "Settings",
+    "History",
+}
+PAGE_OPTIONS = ["Welcome", "Dashboard", "Factory Analysis", "AI Insights", "History", "Settings"]
+SIDEBAR_HIDDEN_PAGES = {"Device Connection", "Welcome"}
+DATA_REFRESH_PAGES = {"Dashboard", "Factory Analysis", "AI Insights", "History"}
+
+DISPLAY_PAGE_LABELS = {
+    "Welcome": "⌂ Welcome",
+    "Dashboard": "⌗ Dashboard",
+    "Factory Analysis": "⚒ Machine Overzicht",
+    "AI Insights": "⌬ AI Insights",
+    "History": "⚙ History",
+    "Settings": "⚙ Settings",
+}
+
+
+def apply_navigation_query_params():
+    """Apply query-param based navigation and clear processed params."""
+    query_params = st.query_params
+    should_clear = False
+
+    requested_page = query_params.get("page")
+    if requested_page in NAV_ALLOWED_PAGES:
+        st.session_state.page = requested_page
+        should_clear = True
+
+    shortcut = query_params.get("shortcut")
+    if shortcut:
+        should_clear = True
+        if shortcut.startswith("page="):
+            page_name = shortcut.split("=", 1)[1]
+            if page_name in NAV_ALLOWED_PAGES:
+                st.session_state.page = page_name
+        elif shortcut == "action=toggle_language":
+            st.session_state.language = 'NL' if st.session_state.get('language', 'EN') == 'EN' else 'EN'
+        elif shortcut == "action=open_device_connection":
+            st.session_state.page = "Device Connection"
+            st.session_state.pending_mode = 'Live'
+
+    if should_clear:
+        st.query_params.clear()
+
+
+def render_page_selector(current_page):
+    """Render redesigned top navigation bar and return the active page."""
+
+    if current_page in SIDEBAR_HIDDEN_PAGES or current_page == "Device Connection":
+        return current_page
+
+    nav_items = [
+        ("Dashboard", "⌗ " + t("Dashboard", "Dashboard")),
+        ("Factory Analysis", "⚒ " + t("Machine Overview", "Machine Overzicht")),
+        ("AI Insights", "⌬ " + t("AI Insights", "AI Inzichten")),
+        ("History", "◷ " + t("History", "Geschiedenis")),
+    ]
+
+    st.markdown('<div class="top-nav-shell">', unsafe_allow_html=True)
+
+    nav_cols = st.columns([1.4, 1.7, 1.5, 1.2, 0.08, 1.1, 1.0], gap="small")
+
+    for idx, (page_name, label) in enumerate(nav_items):
+        with nav_cols[idx]:
+            is_active = current_page == page_name
+            if st.button(
+                label,
+                key=f"top_nav_{page_name.replace(' ', '_').lower()}",
+                use_container_width=True,
+                type="primary" if is_active else "secondary",
+                disabled=is_active,
+            ):
+                st.session_state.page = page_name
+                st.rerun()
+
+    with nav_cols[4]:
+        st.markdown('<div class="top-nav-divider" style="margin: 6px auto;"></div>', unsafe_allow_html=True)
+
+    with nav_cols[5]:
+        settings_active = current_page == "Settings"
+        if st.button(
+            "⚙ " + t("Settings", "Instellingen"),
+            key="top_nav_settings",
+            use_container_width=True,
+            type="primary" if settings_active else "secondary",
+            disabled=settings_active,
+            help=t("Open settings", "Open instellingen"),
+        ):
+            st.session_state.page = "Settings"
+            st.rerun()
+
+    with nav_cols[6]:
+        if st.button(
+            "+ " + t("Device", "Device"),
+            key="top_nav_device_connect",
+            use_container_width=True,
+            type="secondary",
+            help=t("Add device", "Apparaat toevoegen"),
+        ):
+            st.session_state.page = "Device Connection"
+            st.session_state.pending_mode = 'Live'
+            st.rerun()
+
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+    return st.session_state.page
+
+
+def resolve_page_state():
+    """Resolve page state, including guards that require an active device."""
+    if "page" not in st.session_state:
+        st.session_state.page = "Welcome"
+
+    apply_navigation_query_params()
+    page = render_page_selector(st.session_state.page)
+
+    # Legacy route: Home bestaat niet meer, stuur door naar Welcome.
+    if page == "Home":
+        st.session_state.page = "Welcome"
+        page = "Welcome"
+
+    # Welkomscherm slechts één keer tonen
+    if page == "Welcome" and st.session_state.get('welcome_shown', False):
+        st.session_state.page = "Dashboard"
+        page = "Dashboard"
+
+    connection_prompt_required = False
+    live_requested = (
+        st.session_state.get("mode") == "Live"
+        or st.session_state.get("pending_mode") == "Live"
+    )
+    if page == "Dashboard" and live_requested and not has_connected_device():
+        st.session_state.page = "Device Connection"
+        st.session_state.pending_mode = 'Live'
+        page = "Device Connection"
+        connection_prompt_required = True
+
+    return page, connection_prompt_required
+
+
+def refresh_data_frame(active_page):
+    """Refresh monitoring dataframe on pages that need live/simulated updates."""
+    import time
+
+    if active_page in DATA_REFRESH_PAGES:
+        poll_s = max(1, int(st.session_state.refresh_rate))
+        now_ts = time.time()
+        last_poll_ts = float(st.session_state.get("last_data_poll_ts", 0.0))
+        has_target = bool(st.session_state.get("target_currents"))
+        should_poll = (now_ts - last_poll_ts >= poll_s) or not has_target
+
+        if should_poll:
+            polled_row = get_live_data()
+            st.session_state.target_currents = {
+                key: float(value)
+                for key, value in polled_row.items()
+                if str(key).startswith("current_")
+            }
+            st.session_state.last_data_poll_ts = now_ts
+
+        target_row = st.session_state.get("target_currents", {})
+        if target_row:
+            display_row = smooth_current_row(target_row)
+            if "current_1" in display_row:
+                st.session_state.last_live_current = float(display_row["current_1"])
+            st.session_state.last_current_values = {
+                key: float(value)
+                for key, value in display_row.items()
+                if str(key).startswith("current_")
+            }
+            row_with_timestamp = {**display_row, "timestamp": pd.Timestamp.now()}
+            st.session_state.df = pd.concat(
+                [st.session_state.df, pd.DataFrame([row_with_timestamp])],
+                ignore_index=True,
+            )
+
+    st.session_state.df = st.session_state.df.tail(100).reset_index(drop=True)
+
+    return st.session_state.df
+
+
+def build_client_realtime_component_html(machine_names, endpoints, mode, refresh_seconds, panel_title, show_metrics=True, initial_history=None):
+    """Return an HTML app that updates values and Plotly charts client-side."""
+    color_scale = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899', '#84cc16', '#a78bfa']
+    initial_history = initial_history or {"times": [], "series": {}}
+    config = {
+        "machineNames": list(machine_names),
+        "endpoints": list(endpoints),
+        "mode": str(mode),
+        "refreshMs": int(max(1, refresh_seconds) * 1000),
+        "animationMs": int(st.session_state.get("animation_tick_ms", 300)),
+        "panelTitle": str(panel_title),
+        "showMetrics": bool(show_metrics),
+        "colors": color_scale,
+        "initialHistory": initial_history,
+    }
+    config_json = json.dumps(config)
+
+    return f"""
+        <div id="rt-root" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color:#f1f5f9;">
+            <div id="rt-metrics" style="display:{'grid' if show_metrics else 'none'}; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:0 0 18px 0;"></div>
+            <div style="margin:0 0 10px 0; font-size:1.1rem; font-weight:700; color:#f8fafc;">{panel_title}</div>
+            <div id="rt-gauges" style="width:100%; min-height:320px;"></div>
+            <div style="margin:18px 0 10px 0; font-size:1.1rem; font-weight:700; color:#f8fafc;">Stroom Over Tijd</div>
+            <div id="rt-trend" style="width:100%; min-height:420px; background:#0f172a; border:1px solid #1e293b; border-radius:14px; padding:8px;"></div>
+        </div>
+        <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+        <script>
+            const config = {config_json};
+            const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+            const machineNames = config.machineNames;
+            const endpoints = config.endpoints;
+            const colors = config.colors;
+            const maxPoints = 100;
+            const initialHistory = config.initialHistory || {{ times: [], series: {{}} }};
+            const targetValues = Object.fromEntries(machineNames.map((name) => [name, 0.5]));
+            const displayValues = Object.fromEntries(machineNames.map((name) => [name, 0.5]));
+            const historySeries = Object.fromEntries(machineNames.map((name) => [name, [...(initialHistory.series?.[name] || [])] ]));
+            const historyTimes = [...(initialHistory.times || [])];
+            let lastVoltage = null;
+
+            function formatClockTime(value) {{
+                if (!value) return '';
+                if (typeof value === 'string' && /^\\d{{2}}:\\d{{2}}(:\\d{{2}})?$/.test(value)) {{
+                    return value.length === 5 ? `${{value}}:00` : value;
+                }}
+                const parsed = new Date(value);
+                if (!Number.isNaN(parsed.getTime())) {{
+                    return parsed.toLocaleTimeString('nl-NL', {{ hour12: false }});
+                }}
+                return String(value);
+            }}
+
+            machineNames.forEach((name) => {{
+                const seeded = historySeries[name];
+                if (seeded.length) {{
+                    const latest = seeded[seeded.length - 1];
+                    targetValues[name] = latest;
+                    displayValues[name] = latest;
+                }}
+            }});
+
+            function extractCurrent(payload) {{
+                if (payload && typeof payload.current === 'number') return clamp(payload.current, 0.5, 6.0);
+                if (payload && typeof payload.energy === 'number') return clamp(payload.energy / 40.0, 0.5, 6.0);
+                const numericValues = Object.values(payload || {{}}).filter((value) => typeof value === 'number');
+                if (numericValues.length) return clamp(numericValues[0], 0.5, 6.0);
+                return 0.5;
+            }}
+
+            function buildMetricCard(label, value) {{
+                return `
+                    <div style="background:#1e293b;border:1px solid #334155;border-radius:14px;padding:14px 16px;">
+                        <div style="font-size:0.8rem;color:#94a3b8;margin-bottom:6px;">${{label}}</div>
+                        <div style="font-size:1.25rem;font-weight:700;color:#f8fafc;">${{value}}</div>
+                    </div>
+                `;
+            }}
+
+            function renderMetrics() {{
+                if (!config.showMetrics) return;
+                const values = machineNames.map((name) => displayValues[name] || 0);
+                const avg = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+                const peak = values.length ? Math.max(...values) : 0;
+                const min = values.length ? Math.min(...values) : 0;
+                const metricsEl = document.getElementById('rt-metrics');
+                const cards = [
+                    buildMetricCard('Avg Load', `${{avg.toFixed(2)}} A`),
+                    buildMetricCard('Peak Load', `${{peak.toFixed(2)}} A`),
+                    buildMetricCard('Min Load', `${{min.toFixed(2)}} A`),
+                ];
+                if (lastVoltage !== null && Number.isFinite(lastVoltage)) cards.push(buildMetricCard('Voltage', `${{lastVoltage.toFixed(2)}} V`));
+                metricsEl.innerHTML = cards.join('');
+            }}
+
+            function renderGauges() {{
+                const perRow = Math.min(machineNames.length || 1, 5);
+                const rows = Math.ceil((machineNames.length || 1) / perRow);
+                const gapX = perRow <= 2 ? 0.05 : 0.03;
+                const gapY = 0.05;
+                const data = machineNames.map((name, index) => {{
+                    const col = index % perRow;
+                    const row = Math.floor(index / perRow);
+                    const x0 = col / perRow + gapX;
+                    const x1 = (col + 1) / perRow - gapX;
+                    const y0 = ((rows - 1 - row) / rows) + gapY;
+                    const y1 = ((rows - row) / rows) - gapY;
+                    return {{
+                        type: 'indicator',
+                        mode: 'gauge+number',
+                        value: displayValues[name] || 0,
+                        title: {{ text: name, font: {{ size: 13, color: '#f1f5f9' }} }},
+                        number: {{ suffix: ' A', font: {{ size: 22, color: colors[index % colors.length], family: 'monospace' }} }},
+                        gauge: {{ axis: {{ range: [0, 8] }}, bar: {{ color: colors[index % colors.length], thickness: 0.28 }}, bgcolor: '#1e293b', borderwidth: 0 }},
+                        domain: {{ x: [x0, x1], y: [y0, y1] }},
+                    }};
+                }});
+                Plotly.react('rt-gauges', data, {{
+                    paper_bgcolor: '#0f172a',
+                    plot_bgcolor: '#0f172a',
+                    font: {{ color: '#f1f5f9' }},
+                    margin: {{ l: 10, r: 10, t: 10, b: 10 }},
+                    height: 230 * rows,
+                }}, {{ displayModeBar: false, responsive: true }});
+            }}
+
+            function renderTrend() {{
+                if (!historyTimes.length) {{
+                    historyTimes.push(formatClockTime(new Date().toISOString()));
+                }}
+                machineNames.forEach((name) => {{
+                    if (!historySeries[name].length) {{
+                        historySeries[name].push(displayValues[name] || targetValues[name] || 0.5);
+                    }}
+                }});
+                const root = document.getElementById('rt-trend');
+                const width = Math.max(280, (root.clientWidth || 0) - 16);
+                const isCompact = width < 520;
+                const height = config.showMetrics ? (isCompact ? 340 : 420) : (isCompact ? 280 : 340);
+                const padding = config.showMetrics
+                    ? {{ top: 18, right: isCompact ? 10 : 20, bottom: isCompact ? 80 : 68, left: isCompact ? 42 : 58 }}
+                    : {{ top: 18, right: isCompact ? 10 : 20, bottom: isCompact ? 64 : 52, left: isCompact ? 42 : 58 }};
+                const innerWidth = width - padding.left - padding.right;
+                const innerHeight = height - padding.top - padding.bottom;
+                const maxY = 8;
+                const minY = 0;
+                const pointCount = Math.max(2, historyTimes.length);
+                const xStep = pointCount > 1 ? innerWidth / (pointCount - 1) : innerWidth;
+                const yTicks = [0, 2, 4, 6, 8];
+                const tickStart = Math.max(0, historyTimes.length - (isCompact ? 4 : 6));
+                const xLabels = historyTimes.slice(tickStart).map((label) => formatClockTime(label));
+                const latestLabel = formatClockTime(historyTimes[historyTimes.length - 1]);
+                const latestTickIndex = historyTimes.length - 1;
+                const maxTickLabels = isCompact ? 3 : 5;
+                const visibleLabelIndices = new Set();
+                if (xLabels.length <= maxTickLabels) {{
+                    for (let i = 0; i < xLabels.length; i += 1) visibleLabelIndices.add(i);
+                }} else {{
+                    for (let i = 0; i < maxTickLabels; i += 1) {{
+                        const pos = Math.round((i * (xLabels.length - 1)) / (maxTickLabels - 1));
+                        visibleLabelIndices.add(pos);
+                    }}
+                }}
+
+                const toX = (index) => padding.left + (index * xStep);
+                const toY = (value) => padding.top + innerHeight - (((value - minY) / (maxY - minY)) * innerHeight);
+
+                const gridLines = yTicks.map((tick) => {{
+                    const y = toY(tick);
+                    return `
+                        <line x1="${{padding.left}}" y1="${{y}}" x2="${{width - padding.right}}" y2="${{y}}" stroke="#1e293b" stroke-width="1" />
+                        <text x="${{padding.left - 8}}" y="${{y + 4}}" fill="#94a3b8" font-size="11" text-anchor="end">${{tick}}</text>
+                    `;
+                }}).join('');
+
+                const xTickLabels = xLabels.map((label, labelIndex) => {{
+                    if (!visibleLabelIndices.has(labelIndex)) return '';
+                    const absoluteIndex = tickStart + labelIndex;
+                    const x = toX(absoluteIndex);
+                    const isLatestTick = absoluteIndex === latestTickIndex;
+                    const tickY = height - 10;
+                    const transform = isCompact ? `rotate(-20 ${{x}} ${{tickY}})` : '';
+                    const labelColor = isLatestTick ? '#f8fafc' : '#94a3b8';
+                    const labelWeight = isLatestTick ? '700' : '400';
+                    return `
+                        <text x="${{x}}" y="${{tickY}}" fill="${{labelColor}}" font-size="10" font-weight="${{labelWeight}}" text-anchor="middle" transform="${{transform}}">${{label}}</text>
+                        ${{isLatestTick ? `<circle cx="${{x}}" cy="${{height - padding.bottom}}" r="3.5" fill="#f8fafc"></circle>` : ''}}
+                    `;
+                }}).join('');
+
+                const areas = machineNames.map((name, index) => {{
+                    const series = historySeries[name] || [];
+                    if (!series.length) return '';
+                    const linePoints = series.map((value, pointIndex) => `${{toX(pointIndex)}},${{toY(value)}}`).join(' ');
+                    const areaPoints = [
+                        `${{toX(0)}},${{toY(0)}}`,
+                        ...series.map((value, pointIndex) => `${{toX(pointIndex)}},${{toY(value)}}`),
+                        `${{toX(series.length - 1)}},${{toY(0)}}`,
+                    ].join(' ');
+                    const hex = colors[index % colors.length];
+                    const r = parseInt(hex.slice(1, 3), 16);
+                    const g = parseInt(hex.slice(3, 5), 16);
+                    const b = parseInt(hex.slice(5, 7), 16);
+                    const hoverDots = series.map((value, pointIndex) => {{
+                        const x = toX(pointIndex);
+                        const y = toY(value);
+                        const ts = formatClockTime(historyTimes[pointIndex] || '');
+                        return `
+                            <circle cx="${{x}}" cy="${{y}}" r="8" fill="rgba(0,0,0,0.001)">
+                                <title>${{name}} | ${{ts}} | ${{value.toFixed(2)}} A</title>
+                            </circle>
+                        `;
+                    }}).join('');
+                    return `
+                        <polygon points="${{areaPoints}}" fill="rgba(${{r}}, ${{g}}, ${{b}}, 0.10)"></polygon>
+                        <polyline points="${{linePoints}}" fill="none" stroke="${{hex}}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
+                        ${{hoverDots}}
+                    `;
+                }}).join('');
+
+                const legend = machineNames.map((name, index) => `
+                    <div style="display:flex; align-items:center; gap:6px; margin-right:14px; font-size:12px; color:#cbd5e1;">
+                        <span style="display:inline-block; width:10px; height:10px; border-radius:999px; background:${{colors[index % colors.length]}};"></span>
+                        <span>${{name}}</span>
+                    </div>
+                `).join('');
+
+                root.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; padding:6px 8px 2px 8px;">
+                        <div style="display:flex; align-items:center; gap:8px; font-size:12px; color:#94a3b8;">
+                            <span>Laatst gemeten:</span>
+                            <span style="display:inline-flex; align-items:center; padding:4px 10px; border-radius:999px; background:#1e293b; border:1px solid #334155; color:#f8fafc; font-weight:700; letter-spacing:0.02em;">${{latestLabel}}</span>
+                        </div>
+                        <div style="display:flex; justify-content:flex-end; flex-wrap:wrap; gap:4px;">${{legend}}</div>
+                    </div>
+                    <svg viewBox="0 0 ${{width}} ${{height}}" width="100%" height="${{height}}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Live current trend chart" style="display:block; max-width:100%; overflow:hidden;">
+                        <rect x="0" y="0" width="${{width}}" height="${{height}}" fill="#0f172a"></rect>
+                        ${{gridLines}}
+                        <line x1="${{padding.left}}" y1="${{padding.top}}" x2="${{padding.left}}" y2="${{height - padding.bottom}}" stroke="#475569" stroke-width="1.5"></line>
+                        <line x1="${{padding.left}}" y1="${{height - padding.bottom}}" x2="${{width - padding.right}}" y2="${{height - padding.bottom}}" stroke="#475569" stroke-width="1.5"></line>
+                        ${{areas}}
+                        ${{xTickLabels}}
+                        <text x="${{width / 2}}" y="${{height - 18}}" fill="#cbd5e1" font-size="12" text-anchor="middle">Tijd</text>
+                        <text x="18" y="${{height / 2}}" fill="#cbd5e1" font-size="12" text-anchor="middle" transform="rotate(-90 18 ${{height / 2}})">Stroom (A)</text>
+                    </svg>
+                `;
+            }}
+
+            window.addEventListener('resize', () => {{
+                renderTrend();
+                renderGauges();
+            }});
+
+            function pushHistory() {{
+                const now = formatClockTime(new Date().toISOString());
+                historyTimes.push(now);
+                if (historyTimes.length > maxPoints) historyTimes.shift();
+                machineNames.forEach((name) => {{
+                    historySeries[name].push(displayValues[name] || targetValues[name] || 0.5);
+                    if (historySeries[name].length > maxPoints) historySeries[name].shift();
+                }});
+            }}
+
+            function nextSimulationValue(name, index) {{
+                const base = targetValues[name] || (1.2 + index * 0.35);
+                const delta = (Math.random() - 0.5) * 0.6;
+                return clamp(base + delta, 0.5, 6.0);
+            }}
+
+            async function pollTargets() {{
+                if (config.mode === 'Simulation' || !endpoints.length) {{
+                    machineNames.forEach((name, index) => {{
+                        targetValues[name] = nextSimulationValue(name, index);
+                    }});
+                    lastVoltage = null;
+                    return;
+                }}
+
+                const responses = await Promise.all(endpoints.map(async (endpoint) => {{
+                    try {{
+                        const response = await fetch(endpoint, {{ cache: 'no-store' }});
+                        if (!response.ok) throw new Error(`HTTP ${{response.status}}`);
+                        return await response.json();
+                    }} catch (error) {{
+                        return null;
+                    }}
+                }}));
+
+                machineNames.forEach((name, index) => {{
+                    const payload = responses[index];
+                    if (payload) {{
+                        targetValues[name] = extractCurrent(payload);
+                        if (typeof payload.voltage === 'number') lastVoltage = payload.voltage;
+                    }}
+                }});
+            }}
+
+            function animateStep() {{
+                machineNames.forEach((name) => {{
+                    const current = displayValues[name] || 0;
+                    const target = targetValues[name] || 0;
+                    const delta = target - current;
+                    const maxStep = 0.45;
+                    const eased = delta * 0.35;
+                    const step = Math.abs(eased) > maxStep ? Math.sign(eased) * maxStep : eased;
+                    displayValues[name] = Math.abs(delta) < 0.01 ? target : current + step;
+                }});
+                renderMetrics();
+                renderGauges();
+            }}
+
+            async function pollAndRender() {{
+                await pollTargets();
+                pushHistory();
+                renderMetrics();
+                renderGauges();
+                renderTrend();
+            }}
+
+            renderMetrics();
+            renderGauges();
+            renderTrend();
+            pollAndRender();
+            window.setInterval(pollAndRender, config.refreshMs);
+            window.setInterval(animateStep, config.animationMs);
+        </script>
+        """
+
+
+def render_client_realtime_panel(machine_names, panel_title, show_metrics=True):
+    """Render a client-side realtime panel that updates without Streamlit reruns."""
+    connected_devices = st.session_state.get("connected_devices", [])
+    current_df = st.session_state.get("df", pd.DataFrame())
+    endpoint_by_name = {}
+    for index, device in enumerate(connected_devices):
+        device_name = device.get("name") or (
+            st.session_state.machine_names[index]
+            if index < len(st.session_state.machine_names)
+            else f"ESP32 {index + 1}"
+        )
+        endpoint_by_name[device_name] = device.get("endpoint") or build_device_endpoint(
+            device.get("ip"),
+            device.get("port", 80),
+        )
+
+    endpoints = []
+    for machine_name in machine_names:
+        endpoint = endpoint_by_name.get(machine_name)
+        if endpoint:
+            endpoints.append(endpoint)
+
+    initial_history = {"times": [], "series": {name: [] for name in machine_names}}
+    if isinstance(current_df, pd.DataFrame) and not current_df.empty:
+        if "timestamp" in current_df.columns:
+            initial_history["times"] = [
+                pd.to_datetime(timestamp).strftime("%H:%M:%S")
+                for timestamp in current_df["timestamp"].tail(100).tolist()
+            ]
+        else:
+            initial_history["times"] = [str(index + 1) for index in range(len(current_df.tail(100)))]
+
+        for machine_name in machine_names:
+            machine_index = next(
+                (index + 1 for index, name in enumerate(st.session_state.machine_names) if name == machine_name),
+                None,
+            )
+            if machine_index is None:
+                continue
+            column_name = f"current_{machine_index}"
+            if column_name in current_df.columns:
+                initial_history["series"][machine_name] = [
+                    float(value) for value in current_df[column_name].tail(100).tolist()
+                ]
+
+    html = build_client_realtime_component_html(
+        machine_names=machine_names,
+        endpoints=endpoints,
+        mode=st.session_state.get("mode", "Simulation"),
+        refresh_seconds=max(1, int(st.session_state.get("refresh_rate", 2))),
+        panel_title=panel_title,
+        show_metrics=show_metrics,
+        initial_history=initial_history,
+    )
+    rows = max(1, (len(machine_names) + min(len(machine_names), 5) - 1) // max(1, min(len(machine_names), 5)))
+    base_height = 980 if show_metrics else 780
+    components.html(html, height=base_height + (rows - 1) * 190, scrolling=False)
+
+# --- Navigation ---
+page, connection_prompt_required = resolve_page_state()
+
+# --- Scroll to top on page change ---
+if st.session_state.get('_last_page') != page:
+    st.session_state._last_page = page
+    components.html(
+        """
+        <script>
+        function scrollToTop() {
+            var el = window.parent.document.getElementById('page-top-anchor');
+            if (el) { el.scrollIntoView({behavior: 'instant', block: 'start'}); }
+        }
+        scrollToTop();
+        setTimeout(scrollToTop, 100);
+        setTimeout(scrollToTop, 400);
+        </script>
+        """,
+        height=0,
+    )
+st.markdown('<div id="page-top-anchor"></div>', unsafe_allow_html=True)
+
+# --- Live refresh control ---
+# Removed global pause_updates - now only per-chart controls
+
+# Per-chart local pause state and chart snapshots
+chart_keys = [
+    'dashboard_realtime',
+    'dashboard_distribution',
+    'factory_analysis',
+    'ai_table'  # Add AI table pause state
+]
+for ck in chart_keys:
+    if f'pause_{ck}' not in st.session_state:
+        st.session_state[f'pause_{ck}'] = False
+    if f'{ck}_snapshot' not in st.session_state:
+        st.session_state[f'{ck}_snapshot'] = None
+
+df = st.session_state.df
+
+if page == "Welcome":
+    st.title("⌂ Welkom")
+    st.markdown('<div class="welcome-card">', unsafe_allow_html=True)
+    st.markdown("""
+    ### Smart Factory Monitoring Platform
+
+    Dit platform helpt operators, maintenance teams en productiecoordinatie om
+    machineprestaties in realtime te monitoren, afwijkingen vroeg te signaleren
+    en onderhoud beter te plannen.
+    """)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.subheader("Wie Wij Zijn")
+    col_about_a, col_about_b = st.columns(2)
+    with col_about_a:
+        st.markdown('<div class="feature-card">', unsafe_allow_html=True)
+        st.markdown("### Missie")
+        st.markdown(
+            "Productieteams helpen met duidelijke, betrouwbare en direct bruikbare machine-inzichten."
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with col_about_b:
+        st.markdown('<div class="feature-card">', unsafe_allow_html=True)
+        st.markdown("### Visie")
+        st.markdown(
+            "Van reactief onderhoud naar voorspelbaar en datagedreven sturen op capaciteit, uptime en kwaliteit."
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    st.subheader("Wat Wij Doen")
+    st.markdown("""
+    - Verzamelen van live machinegegevens via ESP32-devices
+    - Visualiseren van stroom- en prestatiegegevens in overzichtelijke dashboards
+    - Detecteren van afwijkingen en operationele knelpunten
+    - Ondersteunen van beslissingen met AI-analyses en aanbevelingen
+    - Vastleggen van gebeurtenissen voor analyse, audits en opvolging
+    """)
+
+    st.subheader("Organisatie En Team")
+    col_team_a, col_team_b = st.columns(2)
+    with col_team_a:
+        st.markdown('<div class="feature-card">', unsafe_allow_html=True)
+        st.markdown("### Voor Wie")
+        st.markdown("Operators, technische dienst, productieleiding en procesverbetering.")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with col_team_b:
+        st.markdown('<div class="feature-card">', unsafe_allow_html=True)
+        st.markdown("### Werkwijze")
+        st.markdown("Kleine stappen, snelle feedback en continue verbetering op basis van meetdata.")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    st.subheader("Wat Je In Het Platform Ziet")
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.markdown('<div class="feature-card">', unsafe_allow_html=True)
+        st.markdown("### Dashboard")
+        st.markdown("Realtime trends, gemiddelde belasting, pieken en actuele status per machine.")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        st.markdown('<div class="feature-card">', unsafe_allow_html=True)
+        st.markdown("### Machine Overzicht")
+        st.markdown("Vergelijking tussen machines, trendanalyse en prestatieverschillen over tijd.")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with col_b:
+        st.markdown('<div class="feature-card">', unsafe_allow_html=True)
+        st.markdown("### AI Insights")
+        st.markdown("Automatische signalering van anomalieen, bottlenecks en aanbevelingen per machine.")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        st.markdown('<div class="feature-card">', unsafe_allow_html=True)
+        st.markdown("### History")
+        st.markdown("Logboek van gebeurtenissen, connecties en afwijkingen voor analyse en rapportage.")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    st.subheader("Support En Contact")
+    st.markdown("""
+    - Device onboarding: via `+ Device Connect` in de bovenbalk
+    - Technische support: controleer eerst Device Connection en History
+    - Operationele vragen: gebruik Dashboard en AI Insights als startpunt voor diagnose
+    """)
+
+    st.subheader("Aan De Slag")
+    st.markdown("""
+    1. Voeg een device toe via `+ Device Connect` in de bovenbalk.
+    2. Controleer of Live mode actief is en data binnenkomt.
+    3. Gebruik Dashboard, Machine Overzicht en AI Insights voor monitoring en optimalisatie.
+    """)
+
+    _, mid, _ = st.columns([1, 2, 1])
+    with mid:
+        if st.button("📶 Bluetooth verbinden met ESP32", type="primary", use_container_width=True):
+            st.session_state.welcome_shown = True
+            st.session_state.page = "Device Connection"
+            st.session_state.pending_mode = 'Live'
+            st.rerun()
+        if st.button("Doorgaan zonder verbinden", type="secondary", use_container_width=True):
+            st.session_state.welcome_shown = True
+            st.session_state.page = "Dashboard"
+            st.rerun()
+
+elif page == "Home":
+    st.title("⌂ Smart Factory Platform")
+
+    mode_indicator = st.session_state.get('mode', 'Simulation')
+    device_status = "Live" if st.session_state.get('device_connected', False) else "Simulation"
+    endpoint_info = st.session_state.get('device_endpoint', 'Local simulation')
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("⦿ Mode", mode_indicator)
+    with col2:
+        st.metric("⦿ Device", device_status)
+    with col3:
+        st.caption(f"Endpoint: {endpoint_info}")
+
+    st.markdown('<div class="welcome-card">', unsafe_allow_html=True)
+    st.markdown("""
+    ### Welkom bij jouw Intelligente Fabrieksdashboard
+
+    **Real-time monitoring • AI-gedreven inzichten • Geoptimaliseerde productie**
+
+    Dit platform geeft je volledige controle over je fabrieksomgeving met live data, geavanceerde analyses en intelligente aanbevelingen.
+    """)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.subheader("⌗ Systeem Overzicht")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.markdown('<div class="status-card">', unsafe_allow_html=True)
+        st.metric("Actieve Machines", NUM_MACHINES)
+        st.caption("Machines in monitoring")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with col2:
+        st.markdown('<div class="status-card">', unsafe_allow_html=True)
+        st.metric("Data Punten", len(df))
+        st.caption("Metingen verzameld")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with col3:
+        st.markdown('<div class="status-card">', unsafe_allow_html=True)
+        st.metric("Gem. Belasting", f"{float(np.mean([df[f'current_{i}'].mean() for i in range(1, NUM_MACHINES+1)])):.1f}A")
+        st.caption("Stroomverbruik")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with col4:
+        st.markdown('<div class="status-card">', unsafe_allow_html=True)
+        st.metric("Status", "Online")
+        st.caption("Systeem actief")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # Feature showcase
+    st.subheader("☰ Platform Mogelijkheden")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.markdown('<div class="feature-card">', unsafe_allow_html=True)
+        st.markdown("### Live Dashboard")
+        st.markdown("Real-time monitoring van machine prestaties met interactieve grafieken en trends.")
+        st.markdown("**Gebruik:** Bekijk huidige status en historische data")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with col2:
+        st.markdown('<div class="feature-card">', unsafe_allow_html=True)
+        st.markdown("### Fabrieks Analyse")
+        st.markdown("Diepe analyse per machine met gedetailleerde prestaties en vergelijkingen.")
+        st.markdown("**Gebruik:** Identificeer problemen en optimaliseer productie")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with col3:
+        st.markdown('<div class="feature-card">', unsafe_allow_html=True)
+        st.markdown("### AI Inzichten")
+        st.markdown("Intelligente analyses met anomalie detectie en geautomatiseerde aanbevelingen.")
+        st.markdown("**Gebruik:** Voorspel onderhoud en verbeter efficiency")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # Quick actions
+    st.subheader("☰ Snelle Acties")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        if st.button("⌗ Naar Dashboard", use_container_width=True):
+            st.session_state.page = "Dashboard"
+            st.rerun()
+
+    with col2:
+        if st.button("⚒ Machine Overzicht", use_container_width=True):
+            st.session_state.page = "Factory Analysis"
+            st.rerun()
+
+    with col3:
+        if st.button("⌬ AI Inzichten", use_container_width=True):
+            st.session_state.page = "AI Insights"
+            st.rerun()
+
+    # Footer info
+    st.markdown("---")
+    st.markdown("""
+    <div style='text-align: center; color: #94a3b8; font-size: 0.9rem;'>
+    <strong>Tip:</strong> Gebruik de bovenste navigatiebalk voor snelle navigatie en instellingen<br>
+    Data wordt automatisch elke 2 seconden bijgewerkt
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.divider()
+
+elif page == "Dashboard":
+    st.title(t("⌗ Smart Factory Dashboard", "⌗ Slimme Fabriek Dashboard"))
+    # ── Static header (renders once) ──
+    device_status = "Live Device" if st.session_state.get('device_connected', False) else "Simulation Mode"
+    endpoint_info = st.session_state.get('device_endpoint', 'Local simulation')
+    connected_devices = st.session_state.get('connected_devices', [])
+    num_devices = len(connected_devices)
+    dashboard_df = st.session_state.get('df', pd.DataFrame())
+
+    current_snapshot = {}
+    if isinstance(dashboard_df, pd.DataFrame) and not dashboard_df.empty:
+        for machine_index in range(1, NUM_MACHINES + 1):
+            column_name = f"current_{machine_index}"
+            if column_name in dashboard_df.columns and not dashboard_df[column_name].dropna().empty:
+                current_snapshot[column_name] = float(dashboard_df[column_name].iloc[-1])
+
+    active_machine_count = len(current_snapshot)
+    machine_name_lookup = {
+        f"current_{index}": st.session_state.machine_names[index - 1]
+        if index - 1 < len(st.session_state.machine_names)
+        else f"M{index}"
+        for index in range(1, NUM_MACHINES + 1)
+    }
+    avg_current = float(np.mean(list(current_snapshot.values()))) if current_snapshot else 0.0
+    peak_current = float(np.max(list(current_snapshot.values()))) if current_snapshot else 0.0
+    live_voltage = st.session_state.get('last_voltage', None)
+    busiest_key = max(current_snapshot, key=lambda key: current_snapshot[key]) if current_snapshot else None
+    quietest_key = min(current_snapshot, key=lambda key: current_snapshot[key]) if current_snapshot else None
+
+    if peak_current >= 5.5:
+        overview_status = t("High load detected", "Hoge belasting gedetecteerd")
+        overview_detail = t("One or more machines are near the limit.", "Een of meer machines zitten dicht op de limiet.")
+        status_color = "#f59e0b"
+    elif avg_current <= 1.0 and active_machine_count > 0:
+        overview_status = t("Low activity", "Lage activiteit")
+        overview_detail = t("Current usage is low across the line.", "Het stroomverbruik is laag over de lijn.")
+        status_color = "#38bdf8"
+    else:
+        overview_status = t("System stable", "Systeem stabiel")
+        overview_detail = t("No direct attention needed right now.", "Op dit moment is geen directe aandacht nodig.")
+        status_color = "#22c55e"
+
+    st.markdown(
+        f"""
+        <div style="background:linear-gradient(135deg,#111827 0%,#0f172a 100%); border:1px solid #1f2937; border-left:6px solid {status_color}; border-radius:18px; padding:18px 20px; margin:8px 0 16px 0;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:0.82rem; color:#94a3b8; text-transform:uppercase; letter-spacing:0.08em;">{t('Quick status', 'Snelle status')}</div>
+                    <div style="font-size:1.35rem; font-weight:800; color:#f8fafc; margin-top:4px;">{overview_status}</div>
+                    <div style="font-size:0.95rem; color:#cbd5e1; margin-top:6px;">{overview_detail}</div>
+                </div>
+                <div style="font-size:0.82rem; color:#94a3b8; text-align:right; min-width:180px;">
+                    <div>{t('Source', 'Bron')}: <span style="color:#f8fafc; font-weight:700;">{device_status}</span></div>
+                    <div style="margin-top:4px;">{t('Endpoint', 'Endpoint')}: <span style="color:#e2e8f0;">{endpoint_info}</span></div>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    stat1, stat2, stat3, stat4, stat5 = st.columns(5)
+    with stat1:
+        st.metric(t("⦿ Source", "⦿ Bron"), device_status)
+    with stat2:
+        device_delta = t(f"{num_devices} online", f"{num_devices} online") if num_devices > 0 else None
+        st.metric(t("Connected Devices", "Verbonden Apparaten"), num_devices, delta=device_delta)
+    with stat3:
+        st.metric(t("Active Machines", "Actieve Machines"), active_machine_count)
+    with stat4:
+        st.metric(t("Avg Current", "Gem. Stroom"), f"{avg_current:.2f} A")
+    with stat5:
+        if live_voltage is not None:
+            st.metric(t("Voltage", "Spanning"), f"{live_voltage:.2f} V")
+        else:
+            st.metric(t("Peak Current", "Piekstroom"), f"{peak_current:.2f} A")
+
+    quick1, quick2 = st.columns(2)
+    with quick1:
+        busiest_label = machine_name_lookup.get(busiest_key, "-") if busiest_key else "-"
+        busiest_value = current_snapshot.get(busiest_key, 0.0) if busiest_key else 0.0
+        st.caption(t("Highest current right now", "Hoogste stroom nu"))
+        st.markdown(f"**{busiest_label}**  |  {busiest_value:.2f} A")
+    with quick2:
+        quietest_label = machine_name_lookup.get(quietest_key, "-") if quietest_key else "-"
+        quietest_value = current_snapshot.get(quietest_key, 0.0) if quietest_key else 0.0
+        st.caption(t("Lowest current right now", "Laagste stroom nu"))
+        st.markdown(f"**{quietest_label}**  |  {quietest_value:.2f} A")
+
+    if num_devices > 0:
+        device_names = ", ".join(d.get("name", d.get("ip", "?")) for d in connected_devices)
+        st.caption(f"{t('Connected', 'Verbonden')}: {device_names}")
+    else:
+        st.caption(t("No devices connected", "Geen apparaten verbonden"))
+
+    total_anomalies = len(st.session_state.get('anomalies', []))
+    total_bottlenecks = len(st.session_state.get('bottlenecks', []))
+    avg_load_full = float(
+        np.mean([dashboard_df[f"current_{i}"].mean() for i in range(1, NUM_MACHINES + 1) if f"current_{i}" in dashboard_df.columns])
+    ) if isinstance(dashboard_df, pd.DataFrame) and not dashboard_df.empty else avg_current
+    health_score = max(0, 100 - (avg_load_full * 10) - (total_anomalies * 5))
+
+    if isinstance(dashboard_df, pd.DataFrame) and len(dashboard_df) > 2:
+        trend_columns = [
+            f"current_{i}" for i in range(1, NUM_MACHINES + 1)
+            if f"current_{i}" in dashboard_df.columns
+        ]
+        trend_series = (
+            dashboard_df[trend_columns].to_numpy(dtype=float).mean(axis=1)
+            if trend_columns
+            else np.zeros(len(dashboard_df), dtype=float)
+        )
+        trend_value = np.polyfit(
+            range(len(dashboard_df)),
+            trend_series,
+            1,
+        )[0]
+    else:
+        trend_value = 0.0
+
+    if trend_value > 0.05:
+        trend_label = t("Rising", "Stijgend")
+    elif trend_value < -0.05:
+        trend_label = t("Falling", "Dalend")
+    else:
+        trend_label = t("Stable", "Stabiel")
+
+    st.subheader(t("⌁ Control Overview", "⌁ Controle Overzicht"))
+    overview_col1, overview_col2 = st.columns([1.4, 1])
+
+    with overview_col1:
+        machine_labels = [machine_name_lookup[key] for key in current_snapshot.keys()]
+        machine_values = [current_snapshot[key] for key in current_snapshot.keys()]
+        if machine_labels:
+            fig_snapshot = go.Figure()
+            fig_snapshot.add_trace(go.Bar(
+                x=machine_labels,
+                y=machine_values,
+                marker=dict(color=['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899', '#84cc16', '#a78bfa'][:len(machine_labels)]),
+                text=[f"{value:.2f}A" for value in machine_values],
+                textposition='outside',
+            ))
+            fig_snapshot.update_layout(
+                title=t("Machine Snapshot", "Machine Snapshot"),
+                template='plotly_dark',
+                height=280,
+                margin=dict(l=20, r=20, t=42, b=20),
+                plot_bgcolor='#0f172a',
+                paper_bgcolor='#0f172a',
+                yaxis=dict(title=t("Current (A)", "Stroom (A)"), range=[0, 8]),
+                xaxis=dict(title=t("Machines", "Machines")),
+            )
+            st.plotly_chart(fig_snapshot, use_container_width=True, config={'displayModeBar': False, 'displaylogo': False})
+
+    with overview_col2:
+        ai1, ai2 = st.columns(2)
+        with ai1:
+            st.metric(t("Health", "Gezondheid"), f"{health_score:.0f}%")
+        with ai2:
+            st.metric(t("Trend", "Trend"), trend_label)
+        ai3, ai4 = st.columns(2)
+        with ai3:
+            st.metric(t("Anomalies", "Afwijkingen"), total_anomalies)
+        with ai4:
+            st.metric(t("Bottlenecks", "Knelpunten"), total_bottlenecks)
+
+        event_history = st.session_state.get('event_history', [])
+        event_counts = {
+            t('Anomaly', 'Afwijking'): len([event for event in event_history if event.get('type') == 'Anomaly']),
+            t('Bottleneck', 'Knelpunt'): len([event for event in event_history if event.get('type') == 'Bottleneck']),
+            t('Connection', 'Verbinding'): len([event for event in event_history if event.get('type') == 'Connection']),
+        }
+        fig_events = go.Figure()
+        fig_events.add_trace(go.Bar(
+            x=list(event_counts.keys()),
+            y=list(event_counts.values()),
+            marker_color=['#ef4444', '#f97316', '#10b981'],
+        ))
+        fig_events.update_layout(
+            title=t("History Overview", "Geschiedenis Overzicht"),
+            template='plotly_dark',
+            height=220,
+            margin=dict(l=20, r=20, t=42, b=20),
+            plot_bgcolor='#0f172a',
+            paper_bgcolor='#0f172a',
+            yaxis=dict(title=t("Count", "Aantal"), rangemode='tozero', dtick=1),
+        )
+        st.plotly_chart(fig_events, use_container_width=True, config={'displayModeBar': False, 'displaylogo': False})
+
+        latest_event = event_history[0] if event_history else None
+        if latest_event:
+            st.caption(f"{t('Latest event', 'Laatste gebeurtenis')}: {latest_event.get('type', '-') } | {latest_event.get('timestamp', '')}")
+            st.markdown(f"**{latest_event.get('message', '')}**")
+
+    render_client_realtime_panel(
+        machine_names=st.session_state.machine_names[:NUM_MACHINES],
+        panel_title=t("⌁ Machine Status — Live", "⌁ Machine Status — Live"),
+        show_metrics=True,
+    )
+
+elif page == "Factory Analysis":
+    st.title(t("⚒ Machine Overview", "⚒ Machine Overzicht"))
+
+    st.subheader("Select Machines to Analyze")
+    st.markdown(t(
+        "**What you can do here:** Choose which machines you want to look at in detail. You can compare 1 or multiple machines side-by-side to spot patterns and differences.",
+        "**Wat je hier kunt doen:** Kies welke machines je in detail wilt analyseren. Vergelijk 1 of meer machines naast elkaar om patronen te zien."
+    ))
+
+    selected = st.multiselect(
+        "Machines",
+        st.session_state.machine_names,
+        default=st.session_state.machine_names
+    )
+    if not selected:
+        st.warning(t("Select at least one machine.", "Selecteer minimaal één machine."))
+    else:
+        render_client_realtime_panel(
+            machine_names=selected,
+            panel_title=t("⌁ Live Snelheidsmeters", "⌁ Live Snelheidsmeters"),
+            show_metrics=False,
+        )
+
+
+elif page == "Device Connection":
+    if 'ble_prov_devices' not in st.session_state:
+        st.session_state.ble_prov_devices = []
+
+    connected_devices = st.session_state.get('connected_devices', [])
+    already_connected = len(connected_devices) > 0
+    connected_ip = ', '.join([device.get('ip', '') for device in connected_devices[:3]])
+
+    if (st.session_state.get('pending_mode') == 'Live' or connection_prompt_required) and not already_connected:
+        st.warning(
+            "De ESP32 is nog niet met de site verbonden. Verbind eerst een apparaat; daarna opent het dashboard met de live amperewaarden."
+        )
+
+    # ── Header ──────────────────────────────────────────────────────────────
+    _, mid, _ = st.columns([1, 2, 1])
+    with mid:
+        st.markdown("""
+        <div class="connect-wrap">
+            <p class="connect-title">Apparaten</p>
+            <p class="connect-sub">Verbind een ESP32 via Bluetooth</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    _, mid, _ = st.columns([1, 2, 1])
+    with mid:
+        if already_connected:
+            st.markdown("""
+            <div style="text-align:center;margin-bottom:24px">
+                <div style="font-size:3rem">Connected</div>
+                <p style="color:#4ade80;font-weight:600;margin:8px 0 2px">{count} apparaat/apparaten verbonden</p>
+                <p style="color:#64748b;font-size:0.85rem">{ip}</p>
+            </div>
+            """.format(ip=connected_ip, count=len(connected_devices)), unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div style="text-align:center;margin-bottom:24px">
+                <div style="font-size:3rem">Ready</div>
+                <p style="color:#94a3b8;font-size:0.9rem;margin:8px 0 0">Nog geen apparaat verbonden</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # ── Verbonden apparaten met verbreek-knop ────────────────────────────────
+    if connected_devices:
+        _, mid, _ = st.columns([1, 2, 1])
+        with mid:
+            st.markdown("<p style='color:#64748b;font-size:0.85rem;margin:0 0 8px'>Verbonden apparaten</p>", unsafe_allow_html=True)
+            for device in connected_devices:
+                dev_ip = device.get("ip", "")
+                dev_name = device.get("name", f"ESP32 {dev_ip.split('.')[-1]}")
+                col_info, col_btn = st.columns([3, 1])
+                with col_info:
+                    st.markdown(f"""
+                    <div class="device-card" style="margin-bottom:4px">
+                        <div class="device-icon">ESP</div>
+                        <div class="device-info">
+                            <p class="device-name">{dev_name}</p>
+                            <p class="device-ip">{dev_ip}</p>
+                        </div>
+                        <span class="device-connected-badge">Verbonden</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col_btn:
+                    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+                    if st.button("Verbreek", key=f"disc_{dev_ip}", use_container_width=True, type="secondary"):
+                        disconnect_device(dev_ip)
+                        st.rerun()
+            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+    _, mid, _ = st.columns([1, 2, 1])
+    with mid:
+        # ── Al verbonden → naar dashboard ────────────────────────────────────
+        if already_connected:
+            if st.button("Ga naar Dashboard →", use_container_width=True, type="primary"):
+                st.session_state.page = "Dashboard"
+                st.session_state.mode = 'Live'
+                st.session_state.pending_mode = None
+                st.rerun()
+            st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+
+        # ── BLE Provisioning – nieuwe ESP32 instellen ────────────────────────
+        st.markdown(
+            "<p style='color:#94a3b8;font-size:0.85rem;font-weight:600;margin:0 0 8px'>"
+            "Nieuwe ESP32 instellen via Bluetooth</p>",
+            unsafe_allow_html=True
+        )
+
+        if st.button("Zoek nieuwe ESP32 via Bluetooth", use_container_width=True, type="primary"):
+            with st.spinner("Bluetooth scannen… (6 seconden)"):
+                found = ble_scan_for_provisioning(timeout=6.0)
+            if found:
+                # Haal WiFi-gegevens alvast op zodat we ze niet hoeven in te vullen
+                auto_ssid = get_current_wifi_ssid()
+                auto_pass = get_current_wifi_password(auto_ssid)
+                st.session_state.ble_prov_devices = [
+                    {**d, "auto_ssid": auto_ssid, "auto_pass": auto_pass} for d in found
+                ]
+            else:
+                st.session_state.ble_prov_devices = []
+                st.info(
+                    "Geen nieuwe ESP32 gevonden via Bluetooth. "
+                    "Zorg dat de ESP32 voor het eerst opgestart is (blauwe LED knippert)."
+                )
+
+        ble_devices = st.session_state.get("ble_prov_devices", [])
+        for ble_dev in ble_devices:
+            auto_ssid = ble_dev.get("auto_ssid", "")
+            st.success("Nieuwe ESP32 gevonden. Vul je WiFi-gegevens in:")
+            with st.form(f"prov_form_{ble_dev['address'].replace(':', '_')}"):
+                prov_ssid = st.text_input("WiFi naam (SSID)", value=auto_ssid, placeholder="JouwWiFiNaam")
+                prov_pass = st.text_input("WiFi wachtwoord", type="password", placeholder="Wachtwoord")
+                submitted = st.form_submit_button(
+                    "Akkoord - WiFi instellen", use_container_width=True, type="primary"
+                )
+                if submitted:
+                    if not prov_ssid or not prov_pass:
+                        st.error("Vul WiFi naam en wachtwoord in.")
+                    else:
+                        with st.spinner("ESP32 verbindt met WiFi… (kan 30 seconden duren)"):
+                            try:
+                                ip = ble_provision_esp32(
+                                    ble_dev["address"], prov_ssid, prov_pass, timeout=35.0
+                                )
+                                st.session_state.ble_prov_devices = []
+                            except Exception as exc:
+                                st.error(f"Provisioning mislukt: {exc}")
+                                ip = None
+
+                        if ip:
+                            # ESP32 herstart na provisioning – wacht tot webserver bereikbaar is
+                            with st.spinner(f"Wachten tot ESP32 ({ip}) opstart…"):
+                                endpoint = None
+                                try:
+                                    endpoint, payload, normalized = wait_for_device_endpoint(
+                                        ip,
+                                        80,
+                                        attempts=12,
+                                        delay_s=3,
+                                        timeout=4,
+                                    )
+                                except Exception:
+                                    endpoint = None
+
+                            if endpoint:
+                                activate_live_device_connection(ip, 80, timeout=4)
+                                st.rerun()
+                            else:
+                                st.error(
+                                    f"ESP32 ({ip}) is verbonden met WiFi maar de webserver reageert niet. "
+                                    "Probeer handmatig te verbinden via het 'Al eerder ingesteld?' menu hieronder."
+                                )
+
+        # ── Handmatig IP (nooduitgang voor al-geprovisioneerde ESP32s) ────────
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+        with st.expander("Al eerder ingesteld? Verbind via IP"):
+            default_ip   = st.session_state.get('device_ip', '192.168.1.100')
+            default_port = int(st.session_state.get('device_port', 80))
+            device_ip    = st.text_input("IP-adres", value=default_ip, placeholder="192.168.1.100")
+            device_port  = st.number_input("Poort", value=default_port, min_value=1, max_value=65535)
+            if st.button("Verbinden", key="manual_connect", type="primary", use_container_width=True):
+                with st.spinner(f"Verbinden met {device_ip}…"):
+                    try:
+                        endpoint, payload, normalized = activate_live_device_connection(
+                            device_ip, int(device_port),
+                            timeout=st.session_state.get('connection_timeout', 5)
+                        )
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Verbinden mislukt: {exc}")
+
+        # ── Annuleren ────────────────────────────────────────────────────────
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+        if st.button("Annuleren", use_container_width=True, type="secondary"):
+            st.session_state.page = "Welcome"
+            st.session_state.mode = 'Simulation'
+            st.session_state.pending_mode = None
+            st.rerun()
+
+elif page == "Settings":
+    st.title(t("⚙ Settings", "⚙ Instellingen"))
+
+    # --- Modus kiezen ---
+    st.subheader(t("Mode", "Modus"))
+    connected_count = len(st.session_state.get('connected_devices', []))
+    is_live_locked = connected_count > 0 and st.session_state.get('mode') == 'Live'
+
+    if is_live_locked:
+        st.success(t(
+            f"Live mode — connected to {connected_count} device(s). Disconnect all devices to switch back to Simulation.",
+            f"Live modus — verbonden met {connected_count} apparaat/apparaten. Verbreek alle verbindingen om terug te gaan naar Simulatie."
+        ))
+    else:
+        current_mode = st.session_state.get('mode', 'Simulation')
+        mode_choice = st.radio(
+            t("Select mode", "Kies modus"),
+            [t('Simulation', 'Simulatie'), t('Live', 'Live')],
+            index=1 if current_mode == 'Live' else 0,
+            horizontal=True,
+            key="settings_mode_radio"
+        )
+        if mode_choice in ('Live', 'Live'):
+            chosen = 'Live'
+        else:
+            chosen = 'Simulation'
+
+        if chosen == 'Live' and not st.session_state.get('device_connected', False):
+            if st.button(t("Connect a device first", "Verbind eerst een apparaat"), type="primary"):
+                st.session_state.page = "Device Connection"
+                st.session_state.pending_mode = 'Live'
+                st.rerun()
+        elif chosen == 'Live':
+            st.session_state.mode = 'Live'
+        else:
+            st.session_state.mode = 'Simulation'
+
+    st.divider()
+
+    # --- Language Settings ---
+    if 'language' not in st.session_state:
+        st.session_state.language = 'EN'
+
+    lang = st.selectbox("Language / Taal", ['EN', 'NL'], index=0 if st.session_state.language == 'EN' else 1)
+    st.session_state.language = lang
+
+    st.subheader(t("Simulation Settings", "Simulatie Instellingen"))
+
+    connected_count = len(st.session_state.get('connected_devices', []))
+    live_single_lock = connected_count > 0 and st.session_state.get('mode') == 'Live'
+    if live_single_lock:
+        st.info(t(
+            f"Live mode is connected to {connected_count} device(s), so dashboards are locked to {connected_count} machine(s).",
+            f"Live modus is verbonden met {connected_count} apparaat/apparaten, dus dashboards staan vast op {connected_count} machine(s)."
+        ))
+
+    new_machines = st.slider(
+        "Number of Machines",
+        1,
+        10,
+        st.session_state.num_machines,
+        disabled=live_single_lock,
+    )
+    st.session_state.refresh_rate = st.slider("Data update interval (seconds)", 1, 5, max(1, int(st.session_state.refresh_rate)))
+
+    if new_machines != st.session_state.num_machines:
+        st.session_state.num_machines = new_machines
+        st.session_state.machine_names = [f"Machine {i}" for i in range(1, new_machines+1)]
+        data = {
+            f"current_{i}": np.random.uniform(0.5, 6, 50)
+            for i in range(1, new_machines + 1)
+        }
+        st.session_state.df = pd.DataFrame(data)
+        st.session_state.df["timestamp"] = pd.date_range(
+            end=pd.Timestamp.now(),
+            periods=len(st.session_state.df),
+            freq=f"{int(st.session_state.refresh_rate)}s",
+        )
+        st.success(t("Simulation updated. Reload to apply.", "Simulatie bijgewerkt. Herlaad om toe te passen."))
+
+    st.subheader(t("Machine Names", "Machine Namen"))
+
+    for i in range(st.session_state.num_machines):
+        st.session_state.machine_names[i] = st.text_input(
+            f"Machine {i+1}",
+            value=st.session_state.machine_names[i]
+        )
+
+    # --- Device Connection Settings ---
+    st.subheader(t("Device Connection", "Apparaatverbinding"))
+
+    if st.session_state.get('device_connected', False):
+        st.success(t("Device Connected", "Apparaat Verbonden"))
+        st.info(t("Device is ready for Live mode", "Apparaat is klaar voor Live modus"))
+        if st.session_state.get('device_endpoint'):
+            st.caption(f"Endpoint: {st.session_state.get('device_endpoint')}")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button(t("Reconnect Device", "Herverbind Apparaat"), use_container_width=True):
+                st.session_state.page = "Device Connection"
+                st.session_state.pending_mode = 'Live'
+                st.rerun()
+        with col2:
+            if st.button(t("Disconnect Device", "Apparaat Verbreken"), type="secondary", use_container_width=True):
+                clear_device_connection_state()
+                if st.session_state.get('mode') == 'Live':
+                    st.session_state.mode = 'Simulation'
+                log_event("Connection", "Device disconnected from Settings - Switched to Simulation mode")
+                st.success(t("Device disconnected", "Apparaat verbroken"))
+                st.rerun()
+    else:
+        st.warning(t("No Device Connected", "Geen Apparaat Verbonden"))
+
+        if st.button(t("Connect Device", "Verbind Apparaat"), use_container_width=True, type="primary"):
+            st.session_state.page = "Device Connection"
+            st.session_state.pending_mode = 'Live'
+            st.rerun()
+
+
+elif page=="AI Insights":
+    st.title(t("⌬ AI Insights & Recommendations", "⌬ AI Inzichten & Aanbevelingen"))
+
+    st.markdown(t("""
+    This section uses **AI-driven logic** to analyze machine behavior, detect risks,
+    and provide actionable recommendations.
+    """,
+    """
+    Deze sectie gebruikt **AI-logica** om machinegedrag te analyseren, risico's te detecteren
+    en aanbevelingen te geven.
+    """))
+
+    # --- Overview KPIs ---
+    st.subheader(t("⌗ Key Performance Indicators", "⌗ Belangrijke Prestatie-indicatoren"))
+    st.markdown(t(
+        "These KPIs give you a quick overview of factory health:\n- **Anomalies** = Unexpected machine behaviors detected\n- **Bottlenecks** = Machines slowing down production\n- **Avg Load** = Average power consumption right now",
+        "Deze KPI's geven je snel inzicht in fabrieksgezondheid:\n- **Afwijkingen** = Onverwacht machinegedrag\n- **Knelpunten** = Machines die productie bremmen\n- **Gem. Belasting** = Gemiddeld stroomverbruik nu"
+    ))
+    col1, col2, col3 = st.columns(3)
+    total_anomalies = len(st.session_state.anomalies)
+    total_bottlenecks = len(st.session_state.bottlenecks)
+    avg_load = float(np.mean([df[f"current_{i}"].mean() for i in range(1, NUM_MACHINES+1)]))
+
+    col1.metric(t("Anomalies Detected", "Afwijkingen"), total_anomalies)
+    col2.metric(t("Bottlenecks", "Knelpunten"), total_bottlenecks)
+    col3.metric(t("Avg Load (A)", "Gem. Belasting (A)"), f"{avg_load:.2f}")
+
+
+    # --- Machine Level AI Analysis ---
+    st.subheader(t("⌬ Machine Intelligence Analysis", "⌬ Machine Analyse"))
+    st.markdown(t(
+        "**What this shows:** Each machine is analyzed with these metrics:\n- **Current** = Amperage RIGHT NOW\n- **Avg** = Average over all time\n- **Peak** = Highest power ever used\n- **Anomaly Score** = How unusual the current reading is (higher = more unusual)\n- **Trend** = Is usage going up or down?\n- **Status** = Health assessment",
+        "**Wat dit toont:** Elke machine wordt geanalyseerd op:\n- **Huidig** = Ampère RECHTS NU\n- **Gemiddeld** = Gemiddelde over tijd\n- **Piek** = Hoogste stroom ooit\n- **Afwijkingsscore** = Hoe ongewoon is de huidige meting? (hoger = vreemder)\n- **Trend** = Gaat gebruik omhoog of omlaag?\n- **Status** = Gezondheid"
+    ))
+
+    insights = []
+
+    for i in range(1, NUM_MACHINES+1):
+        cur = df[f"current_{i}"].iloc[-1]
+        avg = df[f"current_{i}"].mean()
+        peak = df[f"current_{i}"].max()
+
+        std = df[f"current_{i}"].std() if df[f"current_{i}"].std() > 0 else 1
+        anomaly_score = abs(cur - avg) / std
+
+        if len(df) > 5:
+            trend_machine = np.polyfit(range(len(df)), df[f"current_{i}"], 1)[0]
+        else:
+            trend_machine = 0
+
+        prediction = t("Stable", "Stabiel")
+        if trend_machine > 0.05:
+            prediction = t("Increasing load", "Stijgende belasting")
+        elif trend_machine < -0.05:
+            prediction = t("Decreasing load", "Dalende belasting")
+
+        status = t("Normal", "Normaal")
+        advice = t("Operating within expected parameters.", "Werkt binnen normale parameters.")
+        severity = "success"
+
+        if anomaly_score > 2.5:
+            status = t("Anomaly Detected", "Afwijking Gedetecteerd")
+            advice = t("Unexpected behavior detected. Inspect machine.", "Onverwacht gedrag. Controleer machine.")
+            severity = "error"
+        elif cur > 6:
+            status = t("Overload Risk", "Overbelasting risico")
+            advice = t("Reduce load or inspect machine for mechanical stress.", "Verlaag belasting of controleer machine op slijtage.")
+            severity = "error"
+        elif cur < 0.5:
+            status = t("Idle", "Inactief")
+            advice = t("Consider powering down to save energy.", "Overweeg uitschakelen om energie te besparen.")
+            severity = "warning"
+        elif avg > 4:
+            status = t("High Usage", "Hoge belasting")
+            advice = t("Monitor efficiency and cooling systems.", "Controleer efficiëntie en koeling.")
+            severity = "warning"
+
+        # Track anomalies and bottlenecks in state for repeatable insights
+        if severity == "error" or anomaly_score > 2.5:
+            anomaly_msg = f"M{i}:{status}:{anomaly_score:.2f}"
+            st.session_state.anomalies.append(anomaly_msg)
+            log_event("Anomaly", f"Machine {i} - {status} (Score: {anomaly_score:.2f})")
+        if severity == "warning" and avg > 4:
+            bottleneck_msg = f"M{i}:{avg:.2f}"
+            st.session_state.bottlenecks.append(bottleneck_msg)
+            log_event("Bottleneck", f"Machine {i} - High Load ({avg:.2f}A)")
+
+
+        insights.append({
+            "Machine": f"M{i}",
+            "Current": round(cur,2),
+            "Avg": round(avg,2),
+            "Peak": round(peak,2),
+            "Status": status,
+            "Advice": advice,
+            "AnomalyScore": round(anomaly_score,2),
+            "Trend": round(trend_machine,3),
+            "Prediction": prediction,
+        })
+
+        if severity == "error":
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.error(f"M{i} → {status}: {advice} | Score: {anomaly_score:.2f}")
+            st.markdown('</div>', unsafe_allow_html=True)
+        elif severity == "warning":
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.warning(f"M{i} → {status}: {advice} | Score: {anomaly_score:.2f}")
+            st.markdown('</div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.success(f"M{i} → {status} | Score: {anomaly_score:.2f}")
+            st.markdown('</div>', unsafe_allow_html=True)
+
+    st.divider()
+
+    # --- Table Overview ---
+    st.subheader(t("⌗ AI Summary Table", "⌗ AI Overzicht"))
+    st.markdown(t(
+        "**Table explanation:**\n- **Current/Avg/Peak** = Power readings in Amperes\n- **Status** = Health: Normal, Anomaly, Overload, Idle, or High Usage\n- **Advice** = What you should do about this machine\n- **AnomalyScore** = Deviation from normal (0.0 = normal, >2.5 = suspicious)\n- **Trend** = Direction: positive (↑) = more usage, negative (↓) = less usage",
+        "**Tabel uitleg:**\n- **Huidig/Gem/Piek** = Stroommetingen in Ampère\n- **Status** = Gezondheid: Normaal, Afwijking, Overbelasting, Inactief, Hoge belasting\n- **Advies** = Wat je moet doen met dit machine\n- **Afwijkingsscore** = Afwijking van normaal (0.0 = normaal, >2.5 = verdacht)\n- **Trend** = Richting: positief (↑) = meer gebruik, negatief (↓) = minder gebruik"
+    ))
+
+    pause_key = 'pause_ai_table'
+    if pause_key not in st.session_state:
+        st.session_state[pause_key] = False
+    if 'ai_insights_snapshot' not in st.session_state:
+        st.session_state['ai_insights_snapshot'] = None
+
+    if st.button(t("Start / Stop section updates", "Start / Stop sectie-updates"), key="btn_toggle_ai"):
+        st.session_state[pause_key] = not st.session_state[pause_key]
+
+    st.write(t(
+        f"Section updates are currently {'paused' if st.session_state[pause_key] else 'running'}.",
+        f"Sectie-updates zijn momenteel {'gepauzeerd' if st.session_state[pause_key] else 'actief'}."
+    ))
+
+    insights_df = pd.DataFrame(insights)
+    if st.session_state[pause_key] and st.session_state.get('ai_insights_snapshot') is not None:
+        insights_df = st.session_state['ai_insights_snapshot']
+    else:
+        st.session_state['ai_insights_snapshot'] = insights_df
+
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.dataframe(insights_df, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # --- System Health Score ---
+    st.subheader(t("⚙ System Health Score", "⚙ Systeem Gezondheid"))
+    st.markdown(t(
+        "**What this means:** A score from 0-100% showing overall factory health. Calculated from power consumption and detected problems. Higher = healthier!",
+        "**Wat dit betekent:** Een score van 0-100% die fabrieksgezondheid toont. Berekend uit stroomverbruik en gevonden problemen. Hoger = gezonder!"
+    ))
+    health = max(0, 100 - (avg_load * 10) - (total_anomalies * 5))
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.metric(t("Health Score", "Gezondheidsscore"), f"{health:.0f}%")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # --- Smart Recommendations ---
+    st.subheader(t("☰ Smart Recommendations", "☰ Slimme Aanbevelingen"))
+    st.markdown(t(
+        "**How this works:** The AI looks at your data and suggests actions to improve your factory. Here's what to do:",
+        "**Hoe dit werkt:** De AI kijkt naar je data en geeft suggesties om je fabriek beter te maken. Hier is wat je kunt doen:"
+    ))
+
+    if total_anomalies > 5:
+        st.error(t("High anomaly rate detected. Perform system diagnostics.", "Veel afwijkingen gedetecteerd. Voer systeemcontrole uit."))
+    elif total_bottlenecks > 3:
+        st.warning(t("Multiple bottlenecks detected. Optimize production flow.", "Meerdere knelpunten gedetecteerd. Optimaliseer productie."))
+    elif avg_load > 4:
+        st.warning(t("Factory running at high load. Risk of inefficiency.", "Fabriek draait zwaar belast. Risico op inefficiëntie."))
+    else:
+        st.success(t("Factory is operating efficiently.", "Fabriek draait efficiënt."))
+
+    # --- Predictive Insight (simple AI simulation) ---
+    st.subheader(t("⌬ Predictive Insight", "⌬ Voorspellende Inzichten"))
+    st.markdown(t(
+        "**What this does:** The AI looks at recent trends and predicts what might happen next:\n- **Upward trend** = Usage is increasing, might overload soon\n- **Downward trend** = Usage is decreasing, machines slowing down\n- **Stable** = Things are normal, no major changes expected",
+        "**Wat dit doet:** De AI kijkt naar recente trends en voorspelt wat volgt:\n- **Stijgende trend** = Gebruik neemt toe, mogelijk overbelasting binnenkort\n- **Dalende trend** = Gebruik neemt af, machines worden minder druk\n- **Stabiel** = Alles normaal, geen grote veranderingen verwacht"
+    ))
+    if len(df) > 2:
+        trend_columns = [f"current_{i}" for i in range(1, NUM_MACHINES+1) if f"current_{i}" in df.columns]
+        trend_series = (
+            df[trend_columns].to_numpy(dtype=float).mean(axis=1)
+            if trend_columns
+            else np.zeros(len(df), dtype=float)
+        )
+        trend = np.polyfit(
+            range(len(df)),
+            trend_series,
+            1
+        )[0]
+    else:
+        trend = 0
+
+    if trend > 0.05:
+        st.warning(t("Upward trend detected → possible overload in near future.", "Stijgende trend → mogelijke overbelasting binnenkort."))
+    elif trend < -0.05:
+        st.info(t("Downward trend detected → decreasing usage.", "Dalende trend → minder gebruik."))
+    else:
+        st.success(t("Stable usage trend.", "Stabiele trend."))
+
+elif page == "History":
+    st.title(t("⚙ Event History", "⚙ Gebeurenissen Geschiedenis"))
+    st.markdown(t("View all system events, anomalies, and important activities", "Bekijk alle systeemgebeurtenissen, afwijkingen en belangrijke activiteiten"))
+
+    # Filter options
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        filter_type = st.multiselect(
+            t("Filter by type", "Filter op type"),
+            ["All", "Anomaly", "Bottleneck", "Connection", "System"],
+            default=["All"],
+            key="history_filter_type"
+        )
+    with col2:
+        sort_option = st.selectbox(
+            t("Sort", "Sorteren"),
+            [t("Newest First", "Nieuwste eerst"), t("Oldest First", "Oudste eerst")],
+            key="history_sort"
+        )
+    with col3:
+        max_events = st.slider(t("Show events", "Toon gebeurtenissen"), 5, 100, 20, key="history_max")
+
+    # Display events
+    st.subheader(t("⌗ Event Log", "⌗ Gebeurtenissenlogboek"))
+
+    if len(st.session_state.event_history) == 0:
+        st.info(t("No events recorded yet", "Nog geen gebeurtenissen opgeslagen"))
+    else:
+        # Reverse if oldest first
+        events_to_show = st.session_state.event_history.copy()
+        if sort_option == t("Oldest First", "Oudste eerst"):
+            events_to_show = events_to_show[::-1]
+
+        # Filter events
+        if "All" not in filter_type:
+            events_to_show = [e for e in events_to_show if e.get("type") in filter_type]
+
+        # Limit events
+        events_to_show = events_to_show[:max_events]
+
+        # Display as cards
+        for event in events_to_show:
+            event_type = event.get("type", "System")
+            message = event.get("message", "")
+            timestamp = event.get("timestamp", "")
+
+            # Color based on type
+            color = "#6366f1"  # blue
+            if event_type == "Anomaly":
+                color = "#ef4444"  # red
+            elif event_type == "Bottleneck":
+                color = "#f97316"  # orange
+            elif event_type == "Connection":
+                color = "#10b981"  # green
+
+            st.markdown(f"""
+            <div style="background-color: #1e293b; border-left: 4px solid {color}; padding: 15px; border-radius: 8px; margin-bottom: 10px;">
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="font-weight: bold; color: {color};">{event_type}</span>
+                    <span style="color: #94a3b8; font-size: 0.9em;">{timestamp}</span>
+                </div>
+                <div style="color: #e2e8f0; margin-top: 8px;">{message}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.divider()
+
+    # Stats
+    st.subheader(t("⌗ History Statistics", "⌗ Geschiedenis Statistieken"))
+    col1, col2, col3, col4 = st.columns(4)
+
+    total_events = len(st.session_state.event_history)
+    anomaties_count = len([e for e in st.session_state.event_history if e.get("type") == "Anomaly"])
+    bottleneck_count = len([e for e in st.session_state.event_history if e.get("type") == "Bottleneck"])
+    connection_count = len([e for e in st.session_state.event_history if e.get("type") == "Connection"])
+
+    col1.metric(t("Total Events", "Totale Gebeurtenissen"), total_events)
+    col2.metric(t("Anomalies", "Afwijkingen"), anomaties_count)
+    col3.metric(t("Bottlenecks", "Knelpunten"), bottleneck_count)
+    col4.metric(t("Connections", "Verbindingen"), connection_count)
+
+    # Clear history option
+    st.divider()
+    if st.button(t("Clear History", "Wis Geschiedenis"), type="secondary"):
+        st.session_state.event_history = []
+        st.success(t("History cleared", "Geschiedenis gewist"))
+        st.rerun()
+# ─────────────────────────────────────────────────────────────
+# 🚀 PRO REALTIME BACKEND (WebSocket via FastAPI)
+# Run separately with: uvicorn machine_sim:app --reload
+# ─────────────────────────────────────────────────────────────
+
+try:
+    import importlib
+    import asyncio
+    import random
+
+    _fastapi = importlib.import_module("fastapi")
+    FastAPI = getattr(_fastapi, "FastAPI")
+    WebSocket = getattr(_fastapi, "WebSocket")
+
+    app = FastAPI()
+
+    @app.websocket("/ws")
+    async def websocket_endpoint(ws):
+        await ws.accept()
+        while True:
+            # Use real data if available, else simulate
+            try:
+                data = get_live_data()
+            except Exception:
+                data = {
+                    f"machine_{i}": random.uniform(1, 6)
+                    for i in range(1, st.session_state.get("num_machines", 3) + 1)
+                }
+
+            await ws.send_json(data)
+            await asyncio.sleep(1)
+
+except Exception:
+    # FastAPI not installed -> ignore this optional websocket backend.
+    pass
