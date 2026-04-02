@@ -2070,7 +2070,7 @@ def render_page_selector(current_page):
             if st.button(
                 label,
                 key=f"top_nav_{page_name.replace(' ', '_').lower()}",
-                use_container_width=True,
+                width="stretch",
                 type="primary" if is_active else "secondary",
                 disabled=is_active,
             ):
@@ -2085,7 +2085,7 @@ def render_page_selector(current_page):
         if st.button(
             "⚙ " + t("Settings", "Instellingen"),
             key="top_nav_settings",
-            use_container_width=True,
+            width="stretch",
             type="primary" if settings_active else "secondary",
             disabled=settings_active,
             help=t("Open settings", "Open instellingen"),
@@ -2097,7 +2097,7 @@ def render_page_selector(current_page):
         if st.button(
             "+ " + t("Device", "Device"),
             key="top_nav_device_connect",
-            use_container_width=True,
+            width="stretch",
             type="secondary",
             help=t("Add device", "Apparaat toevoegen"),
         ):
@@ -2803,7 +2803,7 @@ if page in PROTECTED_PAGES and not st.session_state.get("auth_user"):
     with login_tab:
         login_user = st.text_input(t("Username", "Gebruikersnaam"), key="auth_login_user")
         login_pass = st.text_input(t("Password", "Wachtwoord"), type="password", key="auth_login_pass")
-        if st.button(t("Login", "Inloggen"), key="auth_login_btn", type="primary", use_container_width=True):
+        if st.button(t("Login", "Inloggen"), key="auth_login_btn", type="primary", width="stretch"):
             if authenticate_user(login_user, login_pass):
                 st.session_state.auth_user = login_user.strip().lower()
                 st.session_state.auth_loaded_user = st.session_state.auth_user
@@ -2838,7 +2838,7 @@ if page in PROTECTED_PAGES and not st.session_state.get("auth_user"):
         
         st.divider()
         
-        if st.button(t("Create Account", "Account Aanmaken"), key="auth_register_btn", type="primary", use_container_width=True):
+        if st.button(t("Create Account", "Account Aanmaken"), key="auth_register_btn", type="primary", width="stretch"):
             ok, message = register_user(reg_user, reg_pass, prof_name, prof_email, prof_company)
             if ok:
                 st.success(message)
@@ -2899,14 +2899,14 @@ if (
         )
         action_col1, action_col2 = st.columns(2)
         with action_col1:
-            if st.button("Ga naar Simulation Mode", key="disconnect_to_simulation", type="primary", use_container_width=True):
+            if st.button("Ga naar Simulation Mode", key="disconnect_to_simulation", type="primary", width="stretch"):
                 clear_device_connection_state()
                 st.session_state.mode = "Simulation"
                 st.session_state.pending_mode = None
                 st.session_state.page = "Dashboard"
                 st.rerun()
         with action_col2:
-            if st.button("Reconnect Device", key="disconnect_reconnect", type="secondary", use_container_width=True):
+            if st.button("Reconnect Device", key="disconnect_reconnect", type="secondary", width="stretch"):
                 st.session_state.show_disconnect_prompt = False
                 st.session_state.page = "Device Connection"
                 st.session_state.pending_mode = "Live"
@@ -3034,12 +3034,12 @@ if page == "Welcome":
 
     _, mid, _ = st.columns([1, 2, 1])
     with mid:
-        if st.button("📶 Bluetooth verbinden met ESP32", type="primary", use_container_width=True):
+        if st.button("📶 Bluetooth verbinden met ESP32", type="primary", width="stretch"):
             st.session_state.welcome_shown = True
             st.session_state.page = "Device Connection"
             st.session_state.pending_mode = 'Live'
             st.rerun()
-        if st.button("Doorgaan zonder verbinden", type="secondary", use_container_width=True):
+        if st.button("Doorgaan zonder verbinden", type="secondary", width="stretch"):
             st.session_state.welcome_shown = True
             st.session_state.page = "Dashboard"
             st.rerun()
@@ -3129,17 +3129,17 @@ elif page == "Home":
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        if st.button("⌗ Naar Dashboard", use_container_width=True):
+        if st.button("⌗ Naar Dashboard", width="stretch"):
             st.session_state.page = "Dashboard"
             st.rerun()
 
     with col2:
-        if st.button("⚒ Machine Overzicht", use_container_width=True):
+        if st.button("⚒ Machine Overzicht", width="stretch"):
             st.session_state.page = "Factory Analysis"
             st.rerun()
 
     with col3:
-        if st.button("⌬ AI Inzichten", use_container_width=True):
+        if st.button("⌬ AI Inzichten", width="stretch"):
             st.session_state.page = "AI Insights"
             st.rerun()
 
@@ -3306,7 +3306,7 @@ elif page == "Dashboard":
                 yaxis=dict(title=t("Current (A)", "Stroom (A)"), range=[0, 8]),
                 xaxis=dict(title=t("Machines", "Machines")),
             )
-            st.plotly_chart(fig_snapshot, use_container_width=True, config={'displayModeBar': False, 'displaylogo': False})
+            st.plotly_chart(fig_snapshot, width="stretch", config={'displayModeBar': False, 'displaylogo': False})
 
     with overview_col2:
         ai1, ai2 = st.columns(2)
@@ -3341,7 +3341,7 @@ elif page == "Dashboard":
             paper_bgcolor='#0f172a',
             yaxis=dict(title=t("Count", "Aantal"), rangemode='tozero', dtick=1),
         )
-        st.plotly_chart(fig_events, use_container_width=True, config={'displayModeBar': False, 'displaylogo': False})
+        st.plotly_chart(fig_events, width="stretch", config={'displayModeBar': False, 'displaylogo': False})
 
         latest_event = event_history[0] if event_history else None
         if latest_event:
@@ -3464,7 +3464,7 @@ elif page == "Device Connection":
                     """, unsafe_allow_html=True)
                 with col_btn:
                     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-                    if st.button("Verbreek", key=f"disc_{dev_ip}", use_container_width=True, type="secondary"):
+                    if st.button("Verbreek", key=f"disc_{dev_ip}", width="stretch", type="secondary"):
                         disconnect_device(dev_ip)
                         st.rerun()
             st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
@@ -3473,7 +3473,7 @@ elif page == "Device Connection":
     with mid:
         # ── Al verbonden → naar dashboard ────────────────────────────────────
         if already_connected:
-            if st.button("Ga naar Dashboard →", use_container_width=True, type="primary"):
+            if st.button("Ga naar Dashboard →", width="stretch", type="primary"):
                 st.session_state.page = "Dashboard"
                 st.session_state.mode = 'Live'
                 st.session_state.pending_mode = None
@@ -3487,7 +3487,7 @@ elif page == "Device Connection":
             unsafe_allow_html=True
         )
 
-        if st.button("Zoek nieuwe ESP32 via Bluetooth", use_container_width=True, type="primary"):
+        if st.button("Zoek nieuwe ESP32 via Bluetooth", width="stretch", type="primary"):
             with st.spinner("Bluetooth scannen… (6 seconden)"):
                 found = ble_scan_for_provisioning(timeout=6.0)
             if found:
@@ -3512,7 +3512,7 @@ elif page == "Device Connection":
                 prov_ssid = st.text_input("WiFi naam (SSID)", value=auto_ssid, placeholder="JouwWiFiNaam")
                 prov_pass = st.text_input("WiFi wachtwoord", type="password", placeholder="Wachtwoord")
                 submitted = st.form_submit_button(
-                    "Akkoord - WiFi instellen", use_container_width=True, type="primary"
+                    "Akkoord - WiFi instellen", width="stretch", type="primary"
                 )
                 if submitted:
                     if not prov_ssid or not prov_pass:
@@ -3559,7 +3559,7 @@ elif page == "Device Connection":
             default_port = int(st.session_state.get('device_port', 80))
             device_ip    = st.text_input("IP-adres", value=default_ip, placeholder="192.168.1.100")
             device_port  = st.number_input("Poort", value=default_port, min_value=1, max_value=65535)
-            if st.button("Verbinden", key="manual_connect", type="primary", use_container_width=True):
+            if st.button("Verbinden", key="manual_connect", type="primary", width="stretch"):
                 with st.spinner(f"Verbinden met {device_ip}…"):
                     try:
                         endpoint, payload, normalized = activate_live_device_connection(
@@ -3589,7 +3589,7 @@ elif page == "Device Connection":
 
         # ── Annuleren ────────────────────────────────────────────────────────
         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-        if st.button("Annuleren", use_container_width=True, type="secondary"):
+        if st.button("Annuleren", width="stretch", type="secondary"):
             st.session_state.page = st.session_state.get("last_non_device_page", "Dashboard")
             st.session_state.mode = 'Simulation'
             st.session_state.pending_mode = None
@@ -3733,7 +3733,7 @@ elif page == "Platform":
         paper_bgcolor="#0f172a",
         hovermode="x unified",
     )
-    st.plotly_chart(fig_preview, use_container_width=True, config={'displayModeBar': False, 'displaylogo': False})
+    st.plotly_chart(fig_preview, width="stretch", config={'displayModeBar': False, 'displaylogo': False})
 
     st.subheader(t("Benefits", "Voordelen"))
     st.markdown(t(
@@ -3775,13 +3775,13 @@ elif page == "Platform":
         st.link_button(
             t("Open Webshop", "Open webshop"),
             "https://example.com/webshop",
-            use_container_width=True,
+            width="stretch",
         )
     with buy2:
         st.link_button(
             t("Find a partner", "Zoek partner"),
             "https://example.com/partners",
-            use_container_width=True,
+            width="stretch",
         )
 
     st.markdown(
@@ -3920,7 +3920,7 @@ elif page == "Contact":
                 "Beschrijf je opstelling, vraag of probleem zo duidelijk mogelijk."
             )
         )
-        if st.button(t("Send message", "Bericht versturen"), type="primary", use_container_width=True):
+        if st.button(t("Send message", "Bericht versturen"), type="primary", width="stretch"):
             if contact_name and contact_email and contact_msg:
                 st.success(t(
                     f"Thanks {contact_name}! We received your message and will respond within one business day.",
@@ -4118,22 +4118,22 @@ elif page == "Support":
     st.subheader(t("Useful pages in the app", "Handige pagina's in de app"))
     sc1, sc2, sc3 = st.columns(3)
     with sc1:
-        if st.button("📡 " + t("Device Connection", "Device Connection"), use_container_width=True, key="sup_to_device"):
+        if st.button("📡 " + t("Device Connection", "Device Connection"), width="stretch", key="sup_to_device"):
             st.session_state.page = "Device Connection"
             st.session_state.pending_mode = 'Live'
             st.rerun()
     with sc2:
-        if st.button("🤖 " + t("AI Insights", "AI Insights"), use_container_width=True, key="sup_to_ai"):
+        if st.button("🤖 " + t("AI Insights", "AI Insights"), width="stretch", key="sup_to_ai"):
             st.session_state.page = "AI Insights"
             st.rerun()
     with sc3:
-        if st.button("📋 " + t("History", "Geschiedenis"), use_container_width=True, key="sup_to_history"):
+        if st.button("📋 " + t("History", "Geschiedenis"), width="stretch", key="sup_to_history"):
             st.session_state.page = "History"
             st.rerun()
 
     st.subheader(t("Still stuck? Contact us", "Nog steeds vast? Neem contact op"))
     st.markdown("📧 support@smartfactorysuite.com")
-    if st.button(t("Open contact form", "Open contactformulier"), use_container_width=True, type="primary", key="sup_to_contact"):
+    if st.button(t("Open contact form", "Open contactformulier"), width="stretch", type="primary", key="sup_to_contact"):
         st.session_state.page = "Contact"
         st.rerun()
 
@@ -4213,7 +4213,7 @@ elif page == "Account":
         st.markdown('<span class="acct-nav-marker"></span><span class="acct-nav-label">Menu</span>', unsafe_allow_html=True)
         for _key, _label in _acct_sections:
             _is_active = acct_section == _key
-            if st.button(_label, key=f"acct_nav_{_key}", use_container_width=True,
+            if st.button(_label, key=f"acct_nav_{_key}", width="stretch",
                          type="primary" if _is_active else "secondary"):
                 st.session_state.account_section = _key
                 st.rerun()
@@ -4234,11 +4234,11 @@ elif page == "Account":
                 value=st.session_state.get("profile_company", ""), key="profile_company", disabled=not account_profile_editing)
             if not account_profile_editing:
                 if st.button(t("Change", "Wijzigen"), key="account_edit_details",
-                             use_container_width=True, type="primary"):
+                             width="stretch", type="primary"):
                     st.session_state.account_profile_editing = True
                     st.rerun()
             elif st.button(t("Save changes", "Wijzigingen opslaan"), key="account_save_details",
-                           use_container_width=True, type="primary"):
+                           width="stretch", type="primary"):
                 st.session_state.account_profile_editing = False
                 if not is_guest:
                     persist_active_user_state()
@@ -4269,7 +4269,7 @@ elif page == "Account":
                     status_lbl = ("🟢 " + t("Running", "Draait")) if latest_val > 0.6 else ("⚪ " + t("Idle", "Inactief"))
                     st.caption(status_lbl)
             if st.button(t("Save names", "Namen opslaan"), key="account_save_machines",
-                         use_container_width=True, type="primary"):
+                         width="stretch", type="primary"):
                 edited_names = [st.session_state.get(f"machine_name_{i}", f"Machine {i+1}") for i in range(machines)]
                 st.session_state.machine_names = edited_names
                 if not is_guest:
@@ -4295,7 +4295,7 @@ elif page == "Account":
                 key="notifications_push",
             )
             if st.button(t("Save", "Opslaan"), key="account_save_notifications",
-                         use_container_width=True, type="primary"):
+                         width="stretch", type="primary"):
                 if not is_guest:
                     persist_active_user_state()
                 st.toast(t("Notification settings saved.", "Meldingsinstellingen opgeslagen."), icon="✅")
@@ -4341,7 +4341,7 @@ elif page == "Account":
                 key="language",
             )
             if st.button(t("Save settings", "Instellingen opslaan"), key="account_save_preferences",
-                         use_container_width=True, type="primary"):
+                         width="stretch", type="primary"):
                 if not is_guest:
                     persist_active_user_state()
                 st.toast(t("Settings saved.", "Instellingen opgeslagen."), icon="✅")
@@ -4355,7 +4355,7 @@ elif page == "Account":
                 st.text_input(
                     t("New password", "Nieuw wachtwoord"), type="password", key="account_new_password")
             if st.button(t("Change password", "Wachtwoord wijzigen"), key="account_change_password",
-                         use_container_width=True):
+                         width="stretch"):
                 _cur_pw = st.session_state.get("account_current_password", "")
                 _new_pw = st.session_state.get("account_new_password", "")
                 if is_guest:
@@ -4397,7 +4397,7 @@ elif page == "Account":
             sub_col1, sub_col2 = st.columns(2)
             with sub_col1:
                 if st.button(t("Upgrade", "Upgrade"), key="account_upgrade_plan",
-                             use_container_width=True, type="primary"):
+                             width="stretch", type="primary"):
                     _cur_plan = st.session_state.get("subscription_plan", "Starter")
                     _new_plan = ("Pro" if _cur_plan == "Starter"
                                  else "Enterprise" if _cur_plan == "Pro" else _cur_plan)
@@ -4408,7 +4408,7 @@ elif page == "Account":
                     st.rerun()
             with sub_col2:
                 if st.button(t("Save plan", "Plan opslaan"), key="account_save_plan",
-                             use_container_width=True):
+                             width="stretch"):
                     if not is_guest:
                         persist_active_user_state()
                     st.toast(t("Plan saved.", "Plan opgeslagen."), icon="✅")
@@ -4416,7 +4416,7 @@ elif page == "Account":
             if not invoice_df.empty:
                 st.divider()
                 st.caption(t("Invoices", "Facturen"))
-                st.dataframe(invoice_df, use_container_width=True)
+                st.dataframe(invoice_df, width="stretch")
 
         # ─── 🛠️ Support ───────────────────────────────────────────────
         elif acct_section == "support":
@@ -4426,7 +4426,7 @@ elif page == "Account":
                 "Hulp nodig? Ons supportteam staat klaar om je te helpen."
             ))
             if st.button(t("Go to Contact", "Naar Contact"), key="account_support_contact",
-                         use_container_width=True, type="primary"):
+                         width="stretch", type="primary"):
                 st.session_state.page = "Contact"
                 st.rerun()
 
@@ -4437,7 +4437,7 @@ elif page == "Account":
                 "You will be logged out and returned to the login screen.",
                 "Je wordt uitgelogd en teruggestuurd naar het inlogscherm."
             ))
-            if st.button("↩ " + t("Logout", "Uitloggen"), use_container_width=True,
+            if st.button("↩ " + t("Logout", "Uitloggen"), width="stretch",
                          key="account_logout_bottom", type="secondary"):
                 perform_logout()
 
@@ -4482,7 +4482,7 @@ elif page == "Settings":
             if st.button(
                 settings_tab_labels[tab_key],
                 key=f"settings_top_tab_{tab_key}",
-                use_container_width=True,
+                width="stretch",
                 type="primary" if is_active else "secondary",
             ):
                 st.session_state.settings_active_tab = tab_key
@@ -4636,12 +4636,12 @@ elif page == "Settings":
 
             col1, col2 = st.columns(2)
             with col1:
-                if st.button(t("Reconnect Device", "Herverbind apparaat"), use_container_width=True):
+                if st.button(t("Reconnect Device", "Herverbind apparaat"), width="stretch"):
                     st.session_state.page = "Device Connection"
                     st.session_state.pending_mode = 'Live'
                     st.rerun()
             with col2:
-                if st.button(t("Disconnect Device", "Apparaat verbreken"), type="secondary", use_container_width=True):
+                if st.button(t("Disconnect Device", "Apparaat verbreken"), type="secondary", width="stretch"):
                     clear_device_connection_state()
                     if st.session_state.get('mode') == 'Live':
                         st.session_state.mode = 'Simulation'
@@ -4651,7 +4651,7 @@ elif page == "Settings":
         else:
             st.warning(t("No Device Connected", "Geen apparaat verbonden"))
 
-            if st.button(t("Connect Device", "Verbind apparaat"), use_container_width=True, type="primary"):
+            if st.button(t("Connect Device", "Verbind apparaat"), width="stretch", type="primary"):
                 st.session_state.page = "Device Connection"
                 st.session_state.pending_mode = 'Live'
                 st.rerun()
@@ -4722,7 +4722,7 @@ elif page == "Settings":
                 if st.button(
                     _label,
                     key=f"settings_acct_nav_{_key}",
-                    use_container_width=True,
+                    width="stretch",
                     type="primary" if _is_active else "secondary",
                 ):
                     st.session_state.settings_account_section = _key
@@ -4738,10 +4738,10 @@ elif page == "Settings":
                 st.text_input(t("Email", "E-mail"), value=st.session_state.get("profile_email", ""), key="profile_email", disabled=not settings_profile_editing)
                 st.text_input(t("Company", "Bedrijf"), value=st.session_state.get("profile_company", ""), key="profile_company", disabled=not settings_profile_editing)
                 if not settings_profile_editing:
-                    if st.button(t("Change", "Wijzigen"), key="settings_account_edit_details", use_container_width=True, type="primary"):
+                    if st.button(t("Change", "Wijzigen"), key="settings_account_edit_details", width="stretch", type="primary"):
                         st.session_state.settings_profile_editing = True
                         st.rerun()
-                elif st.button(t("Save changes", "Wijzigingen opslaan"), key="settings_account_save_details", use_container_width=True, type="primary"):
+                elif st.button(t("Save changes", "Wijzigingen opslaan"), key="settings_account_save_details", width="stretch", type="primary"):
                     st.session_state.settings_profile_editing = False
                     if account_is_guest:
                         st.toast(t("Log in to save permanently.", "Log in om permanent op te slaan."), icon="ℹ️")
@@ -4767,7 +4767,7 @@ elif page == "Settings":
                     value=bool(st.session_state.get("notifications_push", False)),
                     key="notifications_push",
                 )
-                if st.button(t("Save", "Opslaan"), key="settings_account_save_notifications", use_container_width=True, type="primary"):
+                if st.button(t("Save", "Opslaan"), key="settings_account_save_notifications", width="stretch", type="primary"):
                     if account_is_guest:
                         st.toast(t("Log in to save permanently.", "Log in om permanent op te slaan."), icon="ℹ️")
                     else:
@@ -4785,7 +4785,7 @@ elif page == "Settings":
                 )
                 sub_col1, sub_col2 = st.columns(2)
                 with sub_col1:
-                    if st.button(t("Upgrade", "Upgrade"), key="settings_account_upgrade_plan", use_container_width=True, type="primary"):
+                    if st.button(t("Upgrade", "Upgrade"), key="settings_account_upgrade_plan", width="stretch", type="primary"):
                         _cur_plan = st.session_state.get("subscription_plan", "Starter")
                         _new_plan = "Pro" if _cur_plan == "Starter" else "Enterprise" if _cur_plan == "Pro" else _cur_plan
                         st.session_state.subscription_plan = _new_plan
@@ -4795,7 +4795,7 @@ elif page == "Settings":
                             persist_active_user_state()
                             st.toast(t("Plan upgraded.", "Plan geupgrade."), icon="🚀")
                 with sub_col2:
-                    if st.button(t("Save plan", "Plan opslaan"), key="settings_account_save_plan", use_container_width=True):
+                    if st.button(t("Save plan", "Plan opslaan"), key="settings_account_save_plan", width="stretch"):
                         if account_is_guest:
                             st.toast(t("Log in to save permanently.", "Log in om permanent op te slaan."), icon="ℹ️")
                         else:
@@ -4805,7 +4805,7 @@ elif page == "Settings":
                 if not invoice_df.empty:
                     st.divider()
                     st.caption(t("Invoices", "Facturen"))
-                    st.dataframe(invoice_df, use_container_width=True)
+                    st.dataframe(invoice_df, width="stretch")
 
             elif account_acct_section == "support":
                 st.subheader("🛠️ " + t("Support", "Support"))
@@ -4813,7 +4813,7 @@ elif page == "Settings":
                     "Need help? Our support team is ready to assist you.",
                     "Hulp nodig? Ons supportteam staat klaar om je te helpen."
                 ))
-                if st.button(t("Go to Contact", "Naar Contact"), key="settings_account_support_contact", use_container_width=True, type="primary"):
+                if st.button(t("Go to Contact", "Naar Contact"), key="settings_account_support_contact", width="stretch", type="primary"):
                     st.session_state.page = "Contact"
                     st.rerun()
 
@@ -4823,7 +4823,7 @@ elif page == "Settings":
                     "You will be logged out and returned to the login screen.",
                     "Je wordt uitgelogd en teruggestuurd naar het inlogscherm."
                 ))
-                if st.button("↩ " + t("Logout", "Uitloggen"), use_container_width=True, key="settings_account_logout_bottom", type="secondary"):
+                if st.button("↩ " + t("Logout", "Uitloggen"), width="stretch", key="settings_account_logout_bottom", type="secondary"):
                     perform_logout()
 
         if account_is_guest:
@@ -4836,7 +4836,7 @@ elif page == "Settings":
             with login_tab:
                 login_user = st.text_input(t("Username", "Gebruikersnaam"), key="settings_auth_login_user")
                 login_pass = st.text_input(t("Password", "Wachtwoord"), type="password", key="settings_auth_login_pass")
-                if st.button(t("Login", "Inloggen"), key="settings_auth_login_btn", type="primary", use_container_width=True):
+                if st.button(t("Login", "Inloggen"), key="settings_auth_login_btn", type="primary", width="stretch"):
                     if not login_user or not login_pass:
                         st.error(t("Please enter both username and password.", "Voer gebruikersnaam en wachtwoord in."))
                     elif authenticate_user(login_user, login_pass):
@@ -4865,7 +4865,7 @@ elif page == "Settings":
                 prof_email = st.text_input(t("Email", "E-mail"), key="settings_auth_register_email")
                 prof_company = st.text_input(t("Company", "Bedrijf"), key="settings_auth_register_company")
                 st.divider()
-                if st.button(t("Create Account", "Account Aanmaken"), key="settings_auth_register_btn", type="primary", use_container_width=True):
+                if st.button(t("Create Account", "Account Aanmaken"), key="settings_auth_register_btn", type="primary", width="stretch"):
                     ok, message = register_user(reg_user, reg_pass, prof_name, prof_email, prof_company)
                     if ok:
                         st.rerun()
@@ -5040,7 +5040,7 @@ elif page=="AI Insights":
         st.session_state['ai_insights_snapshot'] = insights_df
 
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.dataframe(insights_df, use_container_width=True)
+    st.dataframe(insights_df, width="stretch")
     st.markdown('</div>', unsafe_allow_html=True)
 
     # --- System Health Score ---
