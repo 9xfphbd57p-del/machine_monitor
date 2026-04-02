@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+
+# Streamlit/runtime local files
+.streamlit/
