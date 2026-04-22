@@ -5,10 +5,14 @@ import pandas as pd
 import time
 import json
 import os
+import re
+import base64
 import hashlib
 import secrets
 import smtplib
 from email.message import EmailMessage
+from urllib import request as urllib_request
+from urllib import error as urllib_error
 try:
     from streamlit_autorefresh import st_autorefresh  # type: ignore[import-untyped]
 except ImportError:
@@ -76,7 +80,7 @@ def load_css():
     display: none;
 }
 
-.stApp, .stMarkdown, .stCaption, .stText, p, li, label, div {
+.stApp, .stMarkdown, .stCaption, .stText, p, li, label {
     color: #e5eefb;
 }
 
@@ -86,94 +90,45 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 [data-testid="stMetricValue"],
-[data-testid="stMetricLabel"],
-[data-testid="stMetricDelta"] {
+[data-testid="stMetricLabel"] {
     color: #f8fafc !important;
 }
 
-[data-testid="stCaptionContainer"] {
-    color: #cbd5e1 !important;
+.inline-btn-primary {
+    background: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%);
+    color: #ffffff;
+    border: 1px solid #2563eb;
+    box-shadow: 0 10px 24px rgba(59, 130, 246, 0.24);
 }
 
-[data-testid="stVerticalBlock"] > [data-testid="stVerticalBlockBorderWrapper"] {
-    color: #e5eefb;
+.inline-btn-primary:hover {
+    background: linear-gradient(180deg, #2563eb 0%, #1e40af 100%);
+    color: #ffffff;
 }
 
-.card {
-    background: linear-gradient(180deg, rgba(17,24,39,0.94) 0%, rgba(15,23,42,0.98) 100%);
+.inline-btn-secondary {
+    background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+    color: #f8fafc;
     border: 1px solid #334155;
-    box-shadow: 0 16px 32px rgba(2, 8, 23, 0.28);
-    border-radius: 16px;
-    padding: 16px;
-    margin: 8px 0;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.24);
 }
 
-.welcome-card,
-.feature-card,
-.status-card {
-    background: linear-gradient(180deg, rgba(15,23,42,0.95) 0%, rgba(17,24,39,0.95) 100%);
-    border: 1px solid #334155;
-    box-shadow: 0 18px 40px rgba(2, 8, 23, 0.24);
-    border-radius: 18px;
-    padding: 18px;
-    margin: 10px 0;
+.inline-btn-secondary:hover {
+    background: linear-gradient(180deg, #334155 0%, #1e293b 100%);
+    color: #ffffff;
 }
 
-.top-nav-shell {
-    background: linear-gradient(180deg, rgba(8,15,30,0.96) 0%, rgba(15,23,42,0.96) 100%);
-    border: 1px solid #334155;
-    box-shadow: 0 20px 44px rgba(2, 8, 23, 0.32);
-    border-radius: 20px;
-    padding: 10px 12px;
-    margin: 0 0 8px 0;
+.inline-btn-neon {
+    background: linear-gradient(180deg, #14b8a6 0%, #0ea5e9 100%);
+    color: #06202a;
+    border: 1px solid #2dd4bf;
+    box-shadow: 0 10px 24px rgba(20, 184, 166, 0.26);
+    font-weight: 800;
 }
 
-.top-nav-divider {
-    width: 1px;
-    min-height: 42px;
-    background: linear-gradient(180deg, rgba(148,163,184,0.1) 0%, rgba(148,163,184,0.9) 50%, rgba(148,163,184,0.1) 100%);
-}
-
-.stButton > button {
-    background: linear-gradient(180deg, #172554 0%, #1e3a8a 100%) !important;
-    color: #eff6ff !important;
-    border: 1px solid #3b82f6 !important;
-    border-radius: 14px !important;
-    font-weight: 700 !important;
-    box-shadow: 0 10px 24px rgba(30, 64, 175, 0.24);
-}
-
-.stButton > button:hover {
-    background: linear-gradient(180deg, #1e3a8a 0%, #2563eb 100%) !important;
-    color: #ffffff !important;
-    border-color: #60a5fa !important;
-}
-
-.stForm [data-testid="stFormSubmitButton"] > button,
-.stForm button,
-[data-testid="stFormSubmitButton"] > button,
-[data-testid="stDownloadButton"] > button,
-.stDownloadButton > button,
-.stLinkButton > a,
-button[kind="primary"],
-button[kind="secondary"],
-button[kind="tertiary"],
-button[kind="header"],
-button[data-testid="baseButton-primary"],
-button[data-testid="baseButton-secondary"],
-button[data-testid="stBaseButton-primary"],
-button[data-testid="stBaseButton-secondary"] {
-    background: linear-gradient(180deg, #172554 0%, #1e3a8a 100%) !important;
-    color: #eff6ff !important;
-    border: 1px solid #3b82f6 !important;
-    border-radius: 14px !important;
-    font-weight: 700 !important;
-    box-shadow: 0 10px 24px rgba(30, 64, 175, 0.24) !important;
-}
-
-.stLinkButton > a {
-    text-decoration: none !important;
-    padding: 0.45rem 0.9rem !important;
+.inline-btn-neon:hover {
+    background: linear-gradient(180deg, #0ea5e9 0%, #0284c7 100%);
+    color: #06202a;
 }
 
 .stButton > button[kind="secondary"] {
@@ -442,9 +397,6 @@ a {
     color: #475569;
     padding: 4px 14px 10px 14px;
     display: block;
-}
-
-    margin: 6px 0 8px 0;
 }
 
 .connect-wrap {
@@ -730,7 +682,356 @@ a {
 """
 
 
+@st.cache_data
+def load_light_theme_overrides():
+    return """
+<style>
+.stApp {
+    background: radial-gradient(circle at top, #c7daf2 0%, #b5cfee 45%, #a5c4ea 100%) !important;
+    color: #10233d !important;
+}
+
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"],
+section.main {
+    background: transparent !important;
+}
+
+.page-section,
+.settings-section,
+.history-section,
+.top-nav-shell,
+.connect-wrap,
+.history-hero,
+.settings-hero,
+.connect-status,
+.page-hero,
+.platform-hero,
+.about-hero,
+.contact-hero,
+.faq-hero,
+.support-hero {
+    background: linear-gradient(180deg, rgba(194,214,238,0.95) 0%, rgba(178,203,233,0.95) 100%) !important;
+    border: 1px solid #78a9df !important;
+    box-shadow: 0 10px 26px rgba(59,130,246,0.22), 0 0 0 1px rgba(34,211,238,0.18) inset !important;
+}
+
+.card,
+.welcome-card,
+.feature-card,
+.status-card,
+.history-event-card,
+.connect-feature-card,
+.device-card,
+[data-testid="column"]:has(.acct-content-marker) {
+    background: linear-gradient(180deg, #cfe1f4 0%, #bed5ef 100%) !important;
+    border: 1px solid #78a9df !important;
+    box-shadow: 0 14px 34px rgba(37,99,235,0.2), 0 0 0 1px rgba(34,211,238,0.14) inset !important;
+}
+
+.stApp,
+.stMarkdown,
+.stCaption,
+.stText,
+p,
+li,
+label,
+[data-testid="stMetricValue"],
+[data-testid="stMetricLabel"],
+[data-testid="stMetricDelta"] {
+    color: #10233d !important;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.connect-title,
+.history-hero-title,
+.settings-hero-title,
+.device-name,
+.pnav-brand-title,
+.pnav-panel-title {
+    color: #10233d !important;
+}
+
+.connect-sub,
+.history-hero-sub,
+.settings-hero-sub,
+.device-ip,
+.connect-status-meta,
+[data-testid="stCaptionContainer"],
+.history-timestamp,
+.page-hero-sub,
+.pnav-account-row,
+.acct-nav-label {
+    color: #2e4662 !important;
+}
+
+.page-chip,
+.history-chip,
+.settings-chip,
+.pnav-chip,
+.history-badge {
+    color: #1f3e62 !important;
+    border-color: #78a9df !important;
+    background: #c7dcf3 !important;
+}
+
+.pnav-panel,
+.pnav-account {
+    background: linear-gradient(180deg, #c9dcf2 0%, #bad2ee 100%) !important;
+    border-color: #78a9df !important;
+    box-shadow: -6px 0 24px rgba(37,99,235,0.22) !important;
+}
+
+.pnav-item {
+    background: #c4d9f2 !important;
+    border-color: #78a9df !important;
+    color: #10233d !important;
+}
+
+.pnav-item:hover {
+    background: #b7d2f0 !important;
+    border-color: #4d95e2 !important;
+    color: #10233d !important;
+}
+
+.pnav-item.pnav-active {
+    background: linear-gradient(180deg, #a9caf1 0%, #98bfed 100%) !important;
+    border-color: #3b82f6 !important;
+    color: #10233d !important;
+    box-shadow: 0 8px 20px rgba(59,130,246,0.24) !important;
+}
+
+.pnav-hamburger {
+    background: #3b82f6 !important;
+    border-color: #2563eb !important;
+    box-shadow: 0 6px 20px rgba(59, 130, 246, 0.28) !important;
+}
+
+.pnav-brand-kicker,
+.history-timestamp,
+.connect-status-meta,
+.device-ip {
+    color: #4f6783 !important;
+}
+
+.stButton > button,
+.stForm [data-testid="stFormSubmitButton"] > button,
+.stForm button,
+[data-testid="stFormSubmitButton"] > button,
+[data-testid="stDownloadButton"] > button,
+.stDownloadButton > button,
+.stLinkButton > a,
+button[kind="primary"],
+button[data-testid="baseButton-primary"],
+button[data-testid="stBaseButton-primary"] {
+    background: linear-gradient(180deg, #3b82f6 0%, #06b6d4 100%) !important;
+    color: #ffffff !important;
+    border: 1px solid #3b82f6 !important;
+    box-shadow: 0 10px 24px rgba(59, 130, 246, 0.3), 0 0 0 1px rgba(34,211,238,0.24) inset !important;
+}
+
+.stButton > button:hover,
+.stForm [data-testid="stFormSubmitButton"] > button:hover,
+.stForm button:hover,
+[data-testid="stFormSubmitButton"] > button:hover,
+button[kind="primary"]:hover,
+button[data-testid="baseButton-primary"]:hover,
+button[data-testid="stBaseButton-primary"]:hover,
+.stLinkButton > a:hover {
+    background: linear-gradient(180deg, #2563eb 0%, #0ea5e9 100%) !important;
+    border-color: #2563eb !important;
+    color: #ffffff !important;
+}
+
+button[kind="secondary"],
+button[data-testid="baseButton-secondary"],
+button[data-testid="stBaseButton-secondary"] {
+    background: #c6dbf3 !important;
+    color: #2e4662 !important;
+    border: 1px solid #78a9df !important;
+}
+
+[data-baseweb="select"] > div,
+.stSelectbox [data-baseweb="select"] > div,
+.stMultiSelect [data-baseweb="select"] > div,
+div[role="listbox"],
+div[role="option"] {
+    background: #c7daf2 !important;
+    color: #10233d !important;
+    border-color: #78a9df !important;
+}
+
+div[role="option"][aria-selected="true"],
+div[data-baseweb="popover"] [aria-selected="true"],
+div[data-baseweb="popover"] li[aria-selected="true"] {
+    background: #afd0f2 !important;
+    color: #10233d !important;
+}
+
+.stPlotlyChart,
+#rt-trend,
+#snapshot-root {
+    background: #c7daf2 !important;
+    border: 1px solid #78a9df !important;
+}
+
+.stPlotlyChart .js-plotly-plot .plotly .main-svg,
+.stPlotlyChart .js-plotly-plot .plotly .bg {
+    background: #c7daf2 !important;
+}
+
+/* Readability hardening for legacy inline text colors in Settings */
+[style*="color:#f8fafc"],
+[style*="color:#e2e8f0"],
+[style*="color:#cbd5e1"],
+[style*="color:#f1f5f9"] {
+    color: #0f2340 !important;
+}
+
+[style*="rgba(15,23,42,0.96)"],
+[style*="rgba(17,24,39,0.96)"] {
+    border-color: #78a9df !important;
+}
+
+/* Better form readability in Settings */
+.stTextInput input,
+.stTextArea textarea,
+.stNumberInput input {
+    background: #c7daf2 !important;
+    color: #0f2340 !important;
+    border-color: #78a9df !important;
+}
+
+.stTextInput input::placeholder,
+.stTextArea textarea::placeholder,
+.stNumberInput input::placeholder {
+    color: #486587 !important;
+}
+
+.inline-btn-primary {
+    background: linear-gradient(180deg, #3b82f6 0%, #06b6d4 100%) !important;
+    color: #ffffff !important;
+    border-color: #3b82f6 !important;
+    box-shadow: 0 10px 24px rgba(59, 130, 246, 0.3), 0 0 0 1px rgba(34,211,238,0.24) inset !important;
+}
+
+.inline-btn-primary:hover {
+    background: linear-gradient(180deg, #2563eb 0%, #0ea5e9 100%) !important;
+}
+
+.inline-btn-secondary {
+    background: #c6dbf3 !important;
+    color: #2e4662 !important;
+    border-color: #78a9df !important;
+    box-shadow: 0 8px 18px rgba(59,130,246,0.2) !important;
+}
+
+.inline-btn-secondary:hover {
+    background: #b7d2f0 !important;
+    color: #10233d !important;
+    border-color: #4d95e2 !important;
+}
+
+.inline-btn-neon {
+    background: linear-gradient(180deg, #22d3ee 0%, #3b82f6 100%) !important;
+    color: #0a2342 !important;
+    border-color: #38bdf8 !important;
+    box-shadow: 0 10px 24px rgba(14,165,233,0.28), 0 0 0 1px rgba(34,211,238,0.24) inset !important;
+}
+
+.inline-btn-neon:hover {
+    background: linear-gradient(180deg, #0ea5e9 0%, #2563eb 100%) !important;
+    color: #0a2342 !important;
+}
+
+.top-nav-shell {
+    background: linear-gradient(180deg, #c4d9f2 0%, #b7d1ef 100%) !important;
+    border-color: #78a9df !important;
+    box-shadow: 0 14px 30px rgba(59,130,246,0.2) !important;
+}
+
+.top-nav-divider {
+    background: linear-gradient(180deg, rgba(59,130,246,0.1) 0%, rgba(59,130,246,0.8) 50%, rgba(59,130,246,0.1) 100%) !important;
+}
+
+/* Top nav Streamlit buttons */
+button[id^="top_nav_"] {
+    border-radius: 12px !important;
+}
+
+button[id^="top_nav_"][kind="secondary"],
+button[id^="top_nav_"][data-testid="baseButton-secondary"] {
+    background: #c6dbf3 !important;
+    color: #1f3f63 !important;
+    border-color: #78a9df !important;
+}
+
+button[id^="top_nav_"][kind="primary"],
+button[id^="top_nav_"][data-testid="baseButton-primary"] {
+    background: linear-gradient(180deg, #22d3ee 0%, #3b82f6 100%) !important;
+    color: #08233f !important;
+    border-color: #38bdf8 !important;
+    box-shadow: 0 8px 18px rgba(14,165,233,0.26) !important;
+}
+
+/* Simulation/Live toggles and generic mode controls in light neon mode */
+[data-testid="stSegmentedControl"] [role="radiogroup"] {
+    background: linear-gradient(180deg, #c5dcf7 0%, #b8d2f2 100%) !important;
+    border: 1px solid #78a9df !important;
+    box-shadow: 0 10px 20px rgba(59,130,246,0.18) !important;
+}
+
+[data-testid="stSegmentedControl"] [role="radio"],
+[data-testid="stSegmentedControl"] button {
+    color: #2b4a6f !important;
+    background: transparent !important;
+    border: 1px solid transparent !important;
+}
+
+[data-testid="stSegmentedControl"] [role="radio"][aria-checked="true"],
+[data-testid="stSegmentedControl"] button[aria-pressed="true"],
+[data-testid="stSegmentedControl"] [data-selected="true"] {
+    background: linear-gradient(180deg, #22d3ee 0%, #3b82f6 100%) !important;
+    color: #08233f !important;
+    border-color: #38bdf8 !important;
+    box-shadow: 0 8px 18px rgba(14,165,233,0.26) !important;
+}
+
+[data-testid="stSegmentedControl"] [role="radio"]:hover,
+[data-testid="stSegmentedControl"] button:hover {
+    background: rgba(59,130,246,0.16) !important;
+    color: #0f2340 !important;
+}
+
+.stButton > button:disabled,
+button[data-testid="baseButton-primary"][disabled],
+button[data-testid="baseButton-secondary"][disabled],
+button[data-testid="stBaseButton-primary"][disabled],
+button[data-testid="stBaseButton-secondary"][disabled] {
+    opacity: 1 !important;
+    background: linear-gradient(180deg, #a6d5f3 0%, #8fbfea 100%) !important;
+    color: #264a70 !important;
+    border-color: #78a9df !important;
+}
+
+a {
+    color: #2563eb !important;
+}
+</style>
+"""
+
+
+if 'theme_preference' not in st.session_state:
+    st.session_state.theme_preference = "Dark"
+
 st.markdown(load_css(), unsafe_allow_html=True)
+if st.session_state.get("theme_preference") == "Light":
+    st.markdown(load_light_theme_overrides(), unsafe_allow_html=True)
 
 
 if 'language' not in st.session_state:
@@ -755,7 +1056,67 @@ def t(en: str, nl: str) -> str:
     return en if st.session_state.get('language', 'EN') == 'EN' else nl
 
 
+def get_theme_tokens():
+    """Central theme tokens so UI and charts stay in sync across modes."""
+    is_light = st.session_state.get("theme_preference", "Dark") == "Light"
+    custom_accent = str(st.session_state.get("ui_accent_color", "#3b82f6") or "#3b82f6")
+    if is_light:
+        return {
+            "is_light": True,
+            "app_bg": "#c7daf2",
+            "app_bg_mid": "#b5cfee",
+            "app_bg_end": "#a5c4ea",
+            "surface": "#c7daf2",
+            "card": "#c4d9f2",
+            "border": "#78a9df",
+            "text": "#1f2937",
+            "muted": "#374151",
+            "subtle": "#4b5563",
+            "accent": custom_accent,
+            "accent_hover": custom_accent,
+            "accent_glow": "rgba(59,130,246,0.32)",
+            "danger_glow": "rgba(244,63,94,0.28)",
+            "plot_template": "plotly_dark",
+            "plot_grid": "rgba(84,110,139,0.24)",
+            "hero_gradient": "linear-gradient(120deg,#c4d9f2 0%,#b3cdef 60%,#87b9f1 130%)",
+            "hero_gradient_alt": "linear-gradient(120deg,#c4d9f2 0%,#b3cdef 60%,#7fd8e8 130%)",
+        }
+    return {
+        "is_light": False,
+        "app_bg": "#16233b",
+        "app_bg_mid": "#0f172a",
+        "app_bg_end": "#0b1120",
+        "surface": "#0f172a",
+        "card": "#1e293b",
+        "border": "#334155",
+        "text": "#f8fafc",
+        "muted": "#cbd5e1",
+        "subtle": "#94a3b8",
+        "accent": custom_accent,
+        "accent_hover": custom_accent,
+        "accent_glow": "rgba(59,130,246,0.28)",
+        "danger_glow": "rgba(244,63,94,0.24)",
+        "plot_template": "plotly_dark",
+        "plot_grid": "rgba(148,163,184,0.22)",
+        "hero_gradient": "linear-gradient(120deg,#0b1220 0%,#1e293b 60%,#1e3a5f 130%)",
+        "hero_gradient_alt": "linear-gradient(120deg,#0b1220 0%,#1e293b 60%,#134e4a 130%)",
+    }
+
+
 USER_DB_FILE = os.path.join(os.path.dirname(__file__), "users.json")
+LOGO_FILE = os.path.join(os.path.dirname(__file__), "image.png")
+
+
+@st.cache_data
+def get_logo_data_uri() -> str:
+    if not os.path.exists(LOGO_FILE):
+        return ""
+    try:
+        with open(LOGO_FILE, "rb") as f:
+            encoded = base64.b64encode(f.read()).decode("ascii")
+        return f"data:image/png;base64,{encoded}"
+    except Exception:
+        return ""
 
 
 def load_user_db():
@@ -1015,6 +1376,8 @@ def serialize_current_user_state():
 
     return {
         "language": st.session_state.get("language", "EN"),
+        "settings_active_tab": st.session_state.get("settings_active_tab", "general"),
+        "settings_account_section": st.session_state.get("settings_account_section", "profiel"),
         "num_machines": int(st.session_state.get("num_machines", 3)),
         "refresh_rate": int(st.session_state.get("refresh_rate", 1)),
         "machine_names": list(st.session_state.get("machine_names", [])),
@@ -1027,6 +1390,32 @@ def serialize_current_user_state():
         "theme_preference": st.session_state.get("theme_preference", "Dark"),
         "dashboard_preference": st.session_state.get("dashboard_preference", "Overview"),
         "subscription_plan": st.session_state.get("subscription_plan", "Starter"),
+        "dashboard_visible_machines": list(st.session_state.get("dashboard_visible_machines", [])),
+        "dashboard_machine_order": list(st.session_state.get("dashboard_machine_order", [])),
+        "dashboard_show_snapshot_chart": bool(st.session_state.get("dashboard_show_snapshot_chart", True)),
+        "dashboard_show_realtime_panel": bool(st.session_state.get("dashboard_show_realtime_panel", True)),
+        "dashboard_show_history_chart": bool(st.session_state.get("dashboard_show_history_chart", True)),
+        "alert_enabled_by_machine": dict(st.session_state.get("alert_enabled_by_machine", {})),
+        "alert_threshold_watt": int(st.session_state.get("alert_threshold_watt", 1000)),
+        "alert_type_fault": bool(st.session_state.get("alert_type_fault", True)),
+        "alert_type_maintenance": bool(st.session_state.get("alert_type_maintenance", True)),
+        "ui_accent_color": st.session_state.get("ui_accent_color", "#3b82f6"),
+        "ui_density": st.session_state.get("ui_density", "Comfortable"),
+        "ai_response_style": st.session_state.get("ai_response_style", "Detailed"),
+        "ai_technical_level": st.session_state.get("ai_technical_level", "Simple"),
+        "ai_auto_advice": bool(st.session_state.get("ai_auto_advice", True)),
+        "data_time_period": st.session_state.get("data_time_period", "1h"),
+        "data_update_mode": st.session_state.get("data_update_mode", "live"),
+        "data_unit": st.session_state.get("data_unit", "W"),
+        "machine_colors": dict(st.session_state.get("machine_colors", {})),
+        "machine_groups": dict(st.session_state.get("machine_groups", {})),
+        "date_format": st.session_state.get("date_format", "DD-MM-YYYY"),
+        "timezone_name": st.session_state.get("timezone_name", "Europe/Amsterdam"),
+        "privacy_data_sharing": bool(st.session_state.get("privacy_data_sharing", False)),
+        "ai_history_enabled": bool(st.session_state.get("ai_history_enabled", True)),
+        "ui_animations_enabled": bool(st.session_state.get("ui_animations_enabled", True)),
+        "ui_mobile_compact": bool(st.session_state.get("ui_mobile_compact", False)),
+        "ui_sidebar_default": st.session_state.get("ui_sidebar_default", "Open"),
         "invoice_history": list(st.session_state.get("invoice_history", []))[:50],
         "mode": st.session_state.get("mode", "Simulation"),
         "cloud_bridge_enabled": bool(st.session_state.get("cloud_bridge_enabled", False)),
@@ -1045,6 +1434,14 @@ def apply_user_state(state):
         return
 
     st.session_state.language = state.get("language", st.session_state.get("language", "EN"))
+    st.session_state.settings_active_tab = state.get(
+        "settings_active_tab",
+        st.session_state.get("settings_active_tab", "general"),
+    )
+    st.session_state.settings_account_section = state.get(
+        "settings_account_section",
+        st.session_state.get("settings_account_section", "profiel"),
+    )
     st.session_state.num_machines = int(state.get("num_machines", st.session_state.get("num_machines", 3)))
     st.session_state.refresh_rate = int(state.get("refresh_rate", st.session_state.get("refresh_rate", 1)))
     st.session_state.machine_names = list(
@@ -1065,6 +1462,32 @@ def apply_user_state(state):
     st.session_state.notifications_push = bool(state.get("notifications_push", st.session_state.get("notifications_push", False)))
     st.session_state.theme_preference = state.get("theme_preference", st.session_state.get("theme_preference", "Dark"))
     st.session_state.dashboard_preference = state.get("dashboard_preference", st.session_state.get("dashboard_preference", "Overview"))
+    st.session_state.dashboard_visible_machines = list(state.get("dashboard_visible_machines", st.session_state.get("dashboard_visible_machines", [])))
+    st.session_state.dashboard_machine_order = list(state.get("dashboard_machine_order", st.session_state.get("dashboard_machine_order", [])))
+    st.session_state.dashboard_show_snapshot_chart = bool(state.get("dashboard_show_snapshot_chart", st.session_state.get("dashboard_show_snapshot_chart", True)))
+    st.session_state.dashboard_show_realtime_panel = bool(state.get("dashboard_show_realtime_panel", st.session_state.get("dashboard_show_realtime_panel", True)))
+    st.session_state.dashboard_show_history_chart = bool(state.get("dashboard_show_history_chart", st.session_state.get("dashboard_show_history_chart", True)))
+    st.session_state.alert_enabled_by_machine = dict(state.get("alert_enabled_by_machine", st.session_state.get("alert_enabled_by_machine", {})))
+    st.session_state.alert_threshold_watt = int(state.get("alert_threshold_watt", st.session_state.get("alert_threshold_watt", 1000)))
+    st.session_state.alert_type_fault = bool(state.get("alert_type_fault", st.session_state.get("alert_type_fault", True)))
+    st.session_state.alert_type_maintenance = bool(state.get("alert_type_maintenance", st.session_state.get("alert_type_maintenance", True)))
+    st.session_state.ui_accent_color = state.get("ui_accent_color", st.session_state.get("ui_accent_color", "#3b82f6"))
+    st.session_state.ui_density = state.get("ui_density", st.session_state.get("ui_density", "Comfortable"))
+    st.session_state.ai_response_style = state.get("ai_response_style", st.session_state.get("ai_response_style", "Detailed"))
+    st.session_state.ai_technical_level = state.get("ai_technical_level", st.session_state.get("ai_technical_level", "Simple"))
+    st.session_state.ai_auto_advice = bool(state.get("ai_auto_advice", st.session_state.get("ai_auto_advice", True)))
+    st.session_state.data_time_period = state.get("data_time_period", st.session_state.get("data_time_period", "1h"))
+    st.session_state.data_update_mode = state.get("data_update_mode", st.session_state.get("data_update_mode", "live"))
+    st.session_state.data_unit = state.get("data_unit", st.session_state.get("data_unit", "W"))
+    st.session_state.machine_colors = dict(state.get("machine_colors", st.session_state.get("machine_colors", {})))
+    st.session_state.machine_groups = dict(state.get("machine_groups", st.session_state.get("machine_groups", {})))
+    st.session_state.date_format = state.get("date_format", st.session_state.get("date_format", "DD-MM-YYYY"))
+    st.session_state.timezone_name = state.get("timezone_name", st.session_state.get("timezone_name", "Europe/Amsterdam"))
+    st.session_state.privacy_data_sharing = bool(state.get("privacy_data_sharing", st.session_state.get("privacy_data_sharing", False)))
+    st.session_state.ai_history_enabled = bool(state.get("ai_history_enabled", st.session_state.get("ai_history_enabled", True)))
+    st.session_state.ui_animations_enabled = bool(state.get("ui_animations_enabled", st.session_state.get("ui_animations_enabled", True)))
+    st.session_state.ui_mobile_compact = bool(state.get("ui_mobile_compact", st.session_state.get("ui_mobile_compact", False)))
+    st.session_state.ui_sidebar_default = state.get("ui_sidebar_default", st.session_state.get("ui_sidebar_default", "Open"))
     st.session_state.subscription_plan = state.get("subscription_plan", st.session_state.get("subscription_plan", "Starter"))
     st.session_state.invoice_history = list(state.get("invoice_history", st.session_state.get("invoice_history", [])))
     st.session_state.cloud_bridge_enabled = bool(state.get("cloud_bridge_enabled", False))
@@ -1114,6 +1537,10 @@ if 'page' not in st.session_state:
     st.session_state.page = "Platform"
 if 'welcome_shown' not in st.session_state:
     st.session_state.welcome_shown = False
+if 'settings_active_tab' not in st.session_state:
+    st.session_state.settings_active_tab = "general"
+if 'settings_account_section' not in st.session_state:
+    st.session_state.settings_account_section = "profiel"
 if 'mode' not in st.session_state:
     st.session_state.mode = 'Simulation'
 if 'connected_devices' not in st.session_state:
@@ -1183,6 +1610,81 @@ if 'invoice_history' not in st.session_state:
         {"date": "2026-03-01", "description": "Starter Plan", "amount": "EUR 0.00", "status": "Paid"},
         {"date": "2026-02-01", "description": "Starter Plan", "amount": "EUR 0.00", "status": "Paid"},
     ]
+if 'dashboard_visible_machines' not in st.session_state:
+    st.session_state.dashboard_visible_machines = list(range(1, int(st.session_state.get('num_machines', 3)) + 1))
+if 'dashboard_machine_order' not in st.session_state:
+    st.session_state.dashboard_machine_order = list(range(1, int(st.session_state.get('num_machines', 3)) + 1))
+if 'dashboard_show_snapshot_chart' not in st.session_state:
+    st.session_state.dashboard_show_snapshot_chart = True
+if 'dashboard_show_realtime_panel' not in st.session_state:
+    st.session_state.dashboard_show_realtime_panel = True
+if 'dashboard_show_history_chart' not in st.session_state:
+    st.session_state.dashboard_show_history_chart = True
+if 'alert_enabled_by_machine' not in st.session_state:
+    st.session_state.alert_enabled_by_machine = {}
+if 'alert_threshold_watt' not in st.session_state:
+    st.session_state.alert_threshold_watt = 1000
+if 'alert_type_fault' not in st.session_state:
+    st.session_state.alert_type_fault = True
+if 'alert_type_maintenance' not in st.session_state:
+    st.session_state.alert_type_maintenance = True
+if 'ui_accent_color' not in st.session_state:
+    st.session_state.ui_accent_color = "#3b82f6"
+if 'ui_density' not in st.session_state:
+    st.session_state.ui_density = "Comfortable"
+if 'ai_response_style' not in st.session_state:
+    st.session_state.ai_response_style = "Detailed"
+if 'ai_technical_level' not in st.session_state:
+    st.session_state.ai_technical_level = "Simple"
+if 'ai_auto_advice' not in st.session_state:
+    st.session_state.ai_auto_advice = True
+if 'data_time_period' not in st.session_state:
+    st.session_state.data_time_period = "1h"
+if 'data_update_mode' not in st.session_state:
+    st.session_state.data_update_mode = "live"
+if 'data_unit' not in st.session_state:
+    st.session_state.data_unit = "W"
+if 'machine_colors' not in st.session_state:
+    st.session_state.machine_colors = {}
+if 'machine_groups' not in st.session_state:
+    st.session_state.machine_groups = {}
+if 'date_format' not in st.session_state:
+    st.session_state.date_format = "DD-MM-YYYY"
+if 'timezone_name' not in st.session_state:
+    st.session_state.timezone_name = "Europe/Amsterdam"
+if 'privacy_data_sharing' not in st.session_state:
+    st.session_state.privacy_data_sharing = False
+if 'ai_history_enabled' not in st.session_state:
+    st.session_state.ai_history_enabled = True
+if 'ui_animations_enabled' not in st.session_state:
+    st.session_state.ui_animations_enabled = True
+if 'ui_mobile_compact' not in st.session_state:
+    st.session_state.ui_mobile_compact = False
+if 'ui_sidebar_default' not in st.session_state:
+    st.session_state.ui_sidebar_default = "Open"
+if 'ai_insights_notified' not in st.session_state:
+    st.session_state.ai_insights_notified = False
+if 'webshop_notified' not in st.session_state:
+    st.session_state.webshop_notified = False
+
+
+def get_ordered_visible_machine_indices(max_machines):
+    visible = [int(v) for v in list(st.session_state.get("dashboard_visible_machines", [])) if str(v).isdigit()]
+    if not visible:
+        visible = list(range(1, max_machines + 1))
+    visible = [idx for idx in visible if 1 <= idx <= max_machines]
+    order = [int(v) for v in list(st.session_state.get("dashboard_machine_order", [])) if str(v).isdigit()]
+    ordered = [idx for idx in order if idx in visible]
+    remainder = [idx for idx in visible if idx not in ordered]
+    return ordered + remainder
+
+
+def convert_amp_value(value_a):
+    unit = str(st.session_state.get("data_unit", "W"))
+    watt = float(value_a) * 230.0
+    if unit == "kW":
+        return watt / 1000.0, "kW"
+    return watt, "W"
 
 # Reset BLE scanlijst als je de verbindingspagina verlaat.
 if st.session_state.get('page') != "Device Connection":
@@ -1813,8 +2315,10 @@ def poll_connected_devices(timeout):
 
             if index == 1:
                 st.session_state.last_live_current = value
+                st.session_state.last_device_response_time = time.time()  # Track for disconnect detection
 
             device["endpoint"] = endpoint
+            device["last_response"] = time.time()  # Track when device last responded
             latest_payload = payload
             latest_endpoint = endpoint
             successful_devices += 1
@@ -1823,7 +2327,10 @@ def poll_connected_devices(timeout):
             if previous is None:
                 previous = st.session_state.get("last_current_values", {}).get(key, 0.5)
             row[key] = float(np.clip(float(previous), 0.5, 6.0))
-            errors.append(f"{ip}:{port} -> {exc}")
+            error_summary = str(exc)[:100]  # Truncate long errors for readability
+            errors.append(f"{ip}:{port} -> {error_summary}")
+            device["last_error"] = error_summary
+            device["last_error_time"] = time.time()
 
     st.session_state.connected_devices = devices
     if latest_endpoint:
@@ -1929,16 +2436,843 @@ if "bottlenecks" not in st.session_state:
 
 if "event_history" not in st.session_state:
     st.session_state.event_history = []
+if "event_last_seen" not in st.session_state:
+    st.session_state.event_last_seen = {}
 
 # Helper function to log events
-def log_event(event_type, message):
+def log_event(event_type, message, dedupe_key=None, cooldown_s=0, meta=None):
     import datetime
+
+    if dedupe_key:
+        now_ts = time.time()
+        last_seen = float(st.session_state.event_last_seen.get(dedupe_key, 0.0))
+        if (now_ts - last_seen) < max(0, float(cooldown_s)):
+            return False
+        st.session_state.event_last_seen[dedupe_key] = now_ts
+
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     event = {"timestamp": timestamp, "type": event_type, "message": message}
+    if isinstance(meta, dict):
+        event.update(meta)
     st.session_state.event_history.insert(0, event)  # Add to beginning (newest first)
     # Keep only last 100 events
     if len(st.session_state.event_history) > 100:
         st.session_state.event_history = st.session_state.event_history[:100]
+    return True
+
+
+def build_sparkline_data_uri(points, color="#3b82f6"):
+    """Build a tiny inline sparkline image for history cards."""
+    if not isinstance(points, list) or len(points) < 2:
+        return ""
+    numeric = [float(p) for p in points if isinstance(p, (int, float))]
+    if len(numeric) < 2:
+        return ""
+
+    width = 120
+    height = 34
+    pad = 4
+    min_v = min(numeric)
+    max_v = max(numeric)
+    span = max(max_v - min_v, 1e-6)
+
+    path_parts = []
+    for idx, value in enumerate(numeric):
+        x = pad + (idx * (width - 2 * pad) / max(1, (len(numeric) - 1)))
+        y = height - pad - ((value - min_v) / span) * (height - 2 * pad)
+        cmd = "M" if idx == 0 else "L"
+        path_parts.append(f"{cmd}{x:.1f},{y:.1f}")
+
+    path = " ".join(path_parts)
+    svg = (
+        f"<svg xmlns='http://www.w3.org/2000/svg' width='{width}' height='{height}' viewBox='0 0 {width} {height}'>"
+        f"<rect x='0' y='0' width='{width}' height='{height}' rx='8' fill='rgba(15,23,42,0.18)'/>"
+        f"<path d='{path}' fill='none' stroke='{color}' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/>"
+        "</svg>"
+    )
+    encoded = base64.b64encode(svg.encode("utf-8")).decode("ascii")
+    return f"data:image/svg+xml;base64,{encoded}"
+
+
+def build_incident_detail_snapshot(event, df_local, minutes_before=2, minutes_after=1):
+    """Freeze a chart window around the incident timestamp so it stays static in History.
+    Falls back to the stored sparkline_points when the df has no matching timestamps."""
+    if not isinstance(event, dict):
+        return None
+
+    machine_idx = event.get("machine")
+    if machine_idx is None:
+        return None
+
+    try:
+        machine_idx = int(machine_idx)
+    except Exception:
+        return None
+
+    # Try df-based window lookup first (works within the same session)
+    if isinstance(df_local, pd.DataFrame) and not df_local.empty:
+        col_name = f"current_{machine_idx}"
+        if col_name in df_local.columns and "timestamp" in df_local.columns:
+            timestamp_series = pd.to_datetime(df_local["timestamp"], errors="coerce")
+            if not timestamp_series.isna().all():
+                anchor_raw = event.get("incident_anchor_ts") or event.get("event_ts_iso")
+                if anchor_raw:
+                    anchor_ts = pd.to_datetime(anchor_raw, errors="coerce")
+                    if not pd.isna(anchor_ts):
+                        window_mask = (
+                            (timestamp_series >= (anchor_ts - pd.Timedelta(minutes=max(1, int(minutes_before)))))
+                            & (timestamp_series <= (anchor_ts + pd.Timedelta(minutes=max(0, int(minutes_after)))))
+                        )
+                        window_df = df_local.loc[window_mask].copy()
+                        if not window_df.empty:
+                            window_timestamps = pd.to_datetime(window_df["timestamp"], errors="coerce")
+                            distance = (window_timestamps - anchor_ts).abs()
+                            if not distance.isna().all():
+                                center_pos = int(distance.values.argmin())
+                                y_values = pd.to_numeric(window_df[col_name], errors="coerce").fillna(0.0).tolist()
+                                x_values = (
+                                    pd.to_datetime(window_df["timestamp"], errors="coerce")
+                                    .dt.strftime("%H:%M:%S")
+                                    .fillna("")
+                                    .tolist()
+                                )
+                                return {
+                                    "x": x_values,
+                                    "y": [float(v) for v in y_values],
+                                    "incident_index": center_pos,
+                                    "machine": machine_idx,
+                                }
+
+    # Fallback: rebuild from stored sparkline_points (available on all events)
+    spark_points = event.get("sparkline_points", [])
+    if isinstance(spark_points, list) and len(spark_points) >= 2:
+        numeric = [float(p) for p in spark_points if isinstance(p, (int, float))]
+        if len(numeric) >= 2:
+            n = len(numeric)
+            x_labels = [f"T-{n - 1 - i}" for i in range(n)]
+            x_labels[-1] = t("Incident", "Incident")
+            # Incident marker at the point with largest deviation from the pre-incident mean
+            baseline = sum(numeric[:-1]) / max(len(numeric) - 1, 1)
+            incident_pos = max(range(n), key=lambda i: abs(numeric[i] - baseline))
+            return {
+                "x": x_labels,
+                "y": numeric,
+                "incident_index": incident_pos,
+                "machine": machine_idx,
+            }
+
+    return None
+
+
+def build_ai_assistant_result(question):
+    """Build a structured AI assistant result with message, suggested action and chart target."""
+    q = str(question or "").strip().lower()
+    q_norm = re.sub(r"[^a-z0-9\s]", " ", q)
+    q_norm = re.sub(r"\s+", " ", q_norm).strip()
+    q_tokens = [tok for tok in q_norm.split(" ") if tok]
+    empty_message = t("Ask a question about your machines or settings.", "Stel een vraag over je machines of instellingen.")
+    base_result = {
+        "message": empty_message,
+        "target_page": None,
+        "target_label": None,
+        "target_state": {},
+        "chart_machine": None,
+    }
+    if not q:
+        return base_result
+
+    from difflib import SequenceMatcher
+
+    def _sim(a, b):
+        return SequenceMatcher(None, str(a), str(b)).ratio()
+
+    def _term_match(term):
+        term_norm = re.sub(r"[^a-z0-9\s]", " ", str(term).lower()).strip()
+        if not term_norm:
+            return False
+        if term_norm in q_norm:
+            return True
+
+        term_tokens = [tok for tok in term_norm.split(" ") if tok]
+        if len(term_tokens) == 1:
+            t = term_tokens[0]
+            for tok in q_tokens:
+                if tok == t:
+                    return True
+                if len(tok) >= 4 and len(t) >= 4 and (tok.startswith(t[:4]) or t.startswith(tok[:4])):
+                    return True
+                if _sim(tok, t) >= 0.78:
+                    return True
+            return False
+
+        # Multi-word phrase: allow loose token matching with typo tolerance.
+        matched = 0
+        for part in term_tokens:
+            if any(_sim(tok, part) >= 0.78 or (len(tok) >= 4 and len(part) >= 4 and (tok.startswith(part[:4]) or part.startswith(tok[:4]))) for tok in q_tokens):
+                matched += 1
+        if matched >= max(1, len(term_tokens) - 1):
+            return True
+
+        return _sim(q_norm, term_norm) >= 0.72
+
+    def _intent(*terms):
+        return any(_term_match(term) for term in terms)
+
+    df_local = st.session_state.get("df", pd.DataFrame())
+    connected = bool(st.session_state.get("device_connected", False))
+    mode = st.session_state.get("mode", "Simulation")
+    anomalies = len(st.session_state.get("anomalies", []))
+    bottlenecks = len(st.session_state.get("bottlenecks", []))
+    event_history = st.session_state.get("event_history", [])
+    cloud_enabled = bool(st.session_state.get("cloud_bridge_enabled", False))
+    machine_names = list(st.session_state.get("machine_names", []))
+
+    avg_load = 0.0
+    machine_cols = []
+    if isinstance(df_local, pd.DataFrame) and not df_local.empty:
+        machine_cols = [c for c in df_local.columns if str(c).startswith("current_")]
+        if machine_cols:
+            avg_load = float(df_local[machine_cols].astype(float).mean().mean())
+
+    def machine_label(machine_idx):
+        if 1 <= machine_idx <= len(machine_names):
+            return str(machine_names[machine_idx - 1])
+        return f"Machine {machine_idx}"
+
+    def machine_summary(machine_idx):
+        col = f"current_{machine_idx}"
+        if not isinstance(df_local, pd.DataFrame) or df_local.empty or col not in df_local.columns:
+            return None
+        series = pd.to_numeric(df_local[col], errors="coerce").dropna()
+        if series.empty:
+            return None
+        current_value = float(series.iloc[-1])
+        average_value = float(series.mean())
+        peak_value = float(series.max())
+        std_value = float(series.std()) if not np.isnan(series.std()) else 0.0
+        std_value = std_value if std_value > 0 else 1.0
+        anomaly_score = abs(current_value - average_value) / std_value
+        trend_value = float(np.polyfit(range(len(series)), series.to_numpy(dtype=float), 1)[0]) if len(series) > 5 else 0.0
+        if anomaly_score > 2.5 or current_value > 6:
+            status = t("Needs attention", "Heeft aandacht nodig")
+        elif average_value > 4:
+            status = t("Monitor closely", "Extra monitoren")
+        else:
+            status = t("Stable", "Stabiel")
+        trend_label = t("rising", "stijgend") if trend_value > 0.05 else t("falling", "dalend") if trend_value < -0.05 else t("stable", "stabiel")
+        return {
+            "machine": machine_idx,
+            "label": machine_label(machine_idx),
+            "current": current_value,
+            "avg": average_value,
+            "peak": peak_value,
+            "anomaly": anomaly_score,
+            "trend": trend_value,
+            "trend_label": trend_label,
+            "status": status,
+            "risk": anomaly_score + max(0.0, average_value - 4.0) + max(0.0, current_value - 5.5),
+        }
+
+    machine_summaries = []
+    for col_name in machine_cols:
+        try:
+            machine_idx = int(str(col_name).split("_")[1])
+        except Exception:
+            continue
+        summary = machine_summary(machine_idx)
+        if summary:
+            machine_summaries.append(summary)
+
+    top_risk = max(machine_summaries, key=lambda item: item["risk"], default=None)
+    top_current = max(machine_summaries, key=lambda item: item["current"], default=None)
+    overall_trend = 0.0
+    if isinstance(df_local, pd.DataFrame) and not df_local.empty and machine_cols:
+        combined = df_local[machine_cols].astype(float).mean(axis=1)
+        overall_trend = float(np.polyfit(range(len(combined)), combined.to_numpy(dtype=float), 1)[0]) if len(combined) > 5 else 0.0
+    overall_trend_label = t("rising", "stijgend") if overall_trend > 0.05 else t("falling", "dalend") if overall_trend < -0.05 else t("stable", "stabiel")
+    latest_event = event_history[0] if event_history else None
+
+    def result(message, target_page=None, target_label=None, chart_machine=None, target_state=None):
+        payload = dict(base_result)
+        payload["message"] = message
+        payload["target_page"] = target_page
+        payload["target_label"] = target_label
+        payload["chart_machine"] = chart_machine
+        payload["target_state"] = dict(target_state or {})
+        return payload
+
+    machine_match = re.search(r"(?:m|machine|lijn|line)\s*(\d+)", q_norm)
+    if machine_match:
+        machine_idx = int(machine_match.group(1))
+        summary = machine_summary(machine_idx)
+        if summary:
+            action_text = t(
+                "Inspect this machine first." if summary["risk"] > 3 else "Keep monitoring this machine.",
+                "Controleer deze machine eerst." if summary["risk"] > 3 else "Blijf deze machine volgen."
+            )
+            return result(
+                t(
+                    f"**{summary['label']}**\n- Current: {summary['current']:.2f}A\n- Average: {summary['avg']:.2f}A\n- Peak: {summary['peak']:.2f}A\n- Trend: {summary['trend_label']}\n- Status: {summary['status']}\n- Action: {action_text}",
+                    f"**{summary['label']}**\n- Huidig: {summary['current']:.2f}A\n- Gemiddeld: {summary['avg']:.2f}A\n- Piek: {summary['peak']:.2f}A\n- Trend: {summary['trend_label']}\n- Status: {summary['status']}\n- Actie: {action_text}"
+                ),
+                target_page="Factory Analysis",
+                target_label=t("Open machine analysis", "Open machine-analyse"),
+                chart_machine=machine_idx,
+            )
+        return result(
+            t(f"I can not find data for {machine_label(machine_idx)} yet.", f"Ik kan nog geen data vinden voor {machine_label(machine_idx)}."),
+            target_page="Dashboard",
+            target_label=t("Open dashboard", "Open dashboard"),
+        )
+
+    asks_overall_machine_status = (
+        _intent(
+            "alle machines",
+            "all machines",
+            "check all",
+            "overzicht machines",
+            "machine status",
+            "status van alles",
+            "volledige status",
+            "alle lijnen",
+            "all lines",
+            "hoe gaat het met de machines",
+            "hoe doen de machines",
+            "hoe gaat t met de machines",
+            "hoe gaat het met de fabriek",
+            "hoe gaat het met machine",
+            "hoe is de status",
+        )
+        or (
+            any(tok in q_tokens for tok in ["hoe", "gaat", "doen", "status"])
+            and any(tok in q_tokens for tok in ["machine", "machines", "fabriek", "lijn", "lijnen"])
+        )
+    )
+
+    if asks_overall_machine_status:
+        if not machine_summaries:
+            return result(t("No machine data is available yet.", "Er is nog geen machine-data beschikbaar."))
+        if anomalies > 0 or bottlenecks > 0:
+            direct_en = "Short answer: there are active issues, but monitoring is running."
+            direct_nl = "Kort antwoord: er zijn actieve aandachtspunten, maar de monitoring draait."
+        elif avg_load > 4.0:
+            direct_en = "Short answer: machines are running, but load is relatively high."
+            direct_nl = "Kort antwoord: machines draaien, maar de belasting is relatief hoog."
+        else:
+            direct_en = "Short answer: machines are running stable right now."
+            direct_nl = "Kort antwoord: machines draaien op dit moment stabiel."
+
+        lines_en = [f"**{direct_en}**", "", "**Fleet summary**"]
+        lines_nl = [f"**{direct_nl}**", "", "**Machine-overzicht**"]
+        for summary in machine_summaries[: min(5, len(machine_summaries))]:
+            lines_en.append(f"- {summary['label']}: {summary['current']:.2f}A, {summary['status']}, trend {summary['trend_label']}")
+            lines_nl.append(f"- {summary['label']}: {summary['current']:.2f}A, {summary['status']}, trend {summary['trend_label']}")
+        if top_risk:
+            lines_en.append(f"- Action: check {top_risk['label']} first")
+            lines_nl.append(f"- Actie: controleer {top_risk['label']} eerst")
+        return result(
+            t("\n".join(lines_en), "\n".join(lines_nl)),
+            target_page="Dashboard",
+            target_label=t("Open live dashboard", "Open live dashboard"),
+            chart_machine=top_risk["machine"] if top_risk else None,
+        )
+
+    if _intent("onderhoud", "maintenance", "service", "inspect", "inspectie", "reparatie", "slijtage", "storingsgevoelig", "which machine needs maintenance"):
+        if not machine_summaries:
+            return result(t("No machine data is available yet.", "Er is nog geen machine-data beschikbaar."))
+        ranked = sorted(machine_summaries, key=lambda item: item["risk"], reverse=True)[:3]
+        lines_en = ["**Maintenance priority**"]
+        lines_nl = ["**Onderhoudsprioriteit**"]
+        for summary in ranked:
+            lines_en.append(f"- {summary['label']}: risk {summary['risk']:.1f}, current {summary['current']:.2f}A, status {summary['status']}")
+            lines_nl.append(f"- {summary['label']}: risico {summary['risk']:.1f}, huidig {summary['current']:.2f}A, status {summary['status']}")
+        lines_en.append("- Action: inspect the first machine before the next shift")
+        lines_nl.append("- Actie: inspecteer de eerste machine voor de volgende shift")
+        first_machine = ranked[0]["machine"] if ranked else None
+        return result(
+            t("\n".join(lines_en), "\n".join(lines_nl)),
+            target_page="Factory Analysis",
+            target_label=t("Open machine analysis", "Open machine-analyse"),
+            chart_machine=first_machine,
+        )
+
+    if _intent("anomaly", "afwijking", "afwijk", "error", "fout", "storing", "alarms", "alert", "incident"):
+        return result(
+            t(
+                f"**Current anomalies**\n- Count: {anomalies}\n- Highest risk: {(top_risk['label'] if top_risk else '-')}\n- Action: inspect the highest risk machine and check History for context.",
+                f"**Huidige afwijkingen**\n- Aantal: {anomalies}\n- Hoogste risico: {(top_risk['label'] if top_risk else '-')}\n- Actie: controleer de machine met het hoogste risico en bekijk History voor context."
+            ),
+            target_page="History",
+            target_label=t("Open history", "Open history"),
+            chart_machine=top_risk["machine"] if top_risk else None,
+        )
+
+    if _intent("bottleneck", "knelpunt", "load", "belasting", "verbruik", "consumption", "energie", "power usage", "stroomverbruik", "hoger verbruik"):
+        delta_pct = 0.0
+        if machine_summaries:
+            historical_avg = float(np.mean([item["avg"] for item in machine_summaries]))
+            current_avg = float(np.mean([item["current"] for item in machine_summaries]))
+            if historical_avg > 0:
+                delta_pct = ((current_avg - historical_avg) / historical_avg) * 100.0
+        return result(
+            t(
+                f"**Load review**\n- Bottlenecks: {bottlenecks}\n- Average load: {avg_load:.2f}A\n- Delta vs normal: {delta_pct:.1f}%\n- Main source: {(top_current['label'] if top_current else '-')}\n- Action: rebalance workload if the delta stays positive.",
+                f"**Belastingsanalyse**\n- Knelpunten: {bottlenecks}\n- Gemiddelde belasting: {avg_load:.2f}A\n- Verschil vs normaal: {delta_pct:.1f}%\n- Belangrijkste bron: {(top_current['label'] if top_current else '-')}\n- Actie: verdeel de belasting opnieuw als dit verschil hoog blijft."
+            ),
+            target_page="Dashboard",
+            target_label=t("Open live dashboard", "Open live dashboard"),
+            chart_machine=top_current["machine"] if top_current else None,
+        )
+
+    if _intent("live", "verbinding", "connect", "device", "apparaat", "verbonden", "online", "offline", "esp32"):
+        target_page = "Dashboard" if connected else "Device Connection"
+        target_state = {"pending_mode": "Live"} if not connected else {}
+        return result(
+            t(
+                f"**Live status**\n- Mode: {mode}\n- Device connected: {'yes' if connected else 'no'}\n- Cloud bridge: {'enabled' if cloud_enabled else 'disabled'}\n- Action: use Device Connection if you want live ESP32 data.",
+                f"**Live status**\n- Modus: {mode}\n- Apparaat verbonden: {'ja' if connected else 'nee'}\n- Cloud bridge: {'ingeschakeld' if cloud_enabled else 'uitgeschakeld'}\n- Actie: gebruik Device Connection als je live ESP32-data wilt."
+            ),
+            target_page=target_page,
+            target_label=t("Open device connection", "Open device connection") if not connected else t("Open live dashboard", "Open live dashboard"),
+            target_state=target_state,
+        )
+
+    if _intent("trend", "voorspel", "predict", "prediction", "verwachting", "prognose", "forecast", "wat gaat er gebeuren"):
+        if isinstance(df_local, pd.DataFrame) and not df_local.empty and machine_cols:
+            next_risk = top_risk["label"] if top_risk else "-"
+            return result(
+                t(
+                    f"**Prediction**\n- Overall trend: {overall_trend_label}\n- Average load: {avg_load:.2f}A\n- First machine to watch: {next_risk}\n- Action: plan a short inspection if the trend keeps rising.",
+                    f"**Voorspelling**\n- Totale trend: {overall_trend_label}\n- Gemiddelde belasting: {avg_load:.2f}A\n- Eerste machine om te volgen: {next_risk}\n- Actie: plan een korte inspectie als de trend blijft stijgen."
+                ),
+                target_page="Factory Analysis",
+                target_label=t("Open machine analysis", "Open machine-analyse"),
+                chart_machine=top_risk["machine"] if top_risk else None,
+            )
+        return result(t("Not enough data for trend prediction yet.", "Nog niet genoeg data voor trendvoorspelling."))
+
+    if _intent("history", "geschiedenis", "event", "melding", "notificatie", "logboek", "historie", "incident history"):
+        total_events = len(st.session_state.get("event_history", []))
+        return result(
+            t(
+                f"**History summary**\n- Events: {total_events}\n- Anomalies: {anomalies}\n- Bottlenecks: {bottlenecks}\n- Latest: {(latest_event.get('message', '-') if latest_event else '-')}\n- Action: open History for the incident window.",
+                f"**History samenvatting**\n- Events: {total_events}\n- Afwijkingen: {anomalies}\n- Knelpunten: {bottlenecks}\n- Laatste: {(latest_event.get('message', '-') if latest_event else '-')}\n- Actie: open History voor het incidentvenster."
+            ),
+            target_page="History",
+            target_label=t("Open history", "Open history"),
+            chart_machine=top_risk["machine"] if top_risk else None,
+        )
+
+    if _intent("offline", "internet", "cloud", "netwerk", "verbinding cloud", "lokaal", "local mode"):
+        return result(
+            t(
+                f"**Cloud and offline**\n- Local fallback: active\n- Cloud bridge: {'enabled' if cloud_enabled else 'disabled'}\n- Action: keep local mode as backup during network issues.",
+                f"**Cloud en offline**\n- Lokale fallback: actief\n- Cloud bridge: {'ingeschakeld' if cloud_enabled else 'uitgeschakeld'}\n- Actie: houd lokale modus als back-up bij netwerkproblemen."
+            ),
+            target_page="Settings",
+            target_label=t("Open settings", "Open settings"),
+            target_state={"settings_active_tab": "general"},
+        )
+
+    if _intent("instelling", "setting", "theme", "taal", "language", "voorkeur", "preferences", "dashboard instellingen"):
+        return result(
+            t(
+                "**Settings**\n- Theme, language, refresh speed, and machine setup are in Settings > General\n- Action: open Settings if you want to personalize the dashboard.",
+                "**Instellingen**\n- Thema, taal, verversing en machine-setup staan in Settings > Algemeen\n- Actie: open Settings als je het dashboard wilt personaliseren."
+            ),
+            target_page="Settings",
+            target_label=t("Open settings", "Open settings"),
+            target_state={"settings_active_tab": "general"},
+        )
+
+    # Default fallback: always provide a useful machine status overview.
+    fallback_machine = top_risk or top_current
+    if machine_summaries:
+        if anomalies > 0 or bottlenecks > 0:
+            direct_en = "Short answer: your factory is running, but there are issues to check."
+            direct_nl = "Kort antwoord: je fabriek draait, maar er zijn punten die je moet controleren."
+        elif avg_load > 4.0:
+            direct_en = "Short answer: performance is okay, but load is on the high side."
+            direct_nl = "Kort antwoord: prestaties zijn oké, maar de belasting is aan de hoge kant."
+        else:
+            direct_en = "Short answer: performance looks stable right now."
+            direct_nl = "Kort antwoord: prestaties lijken nu stabiel."
+
+        lines_en = [
+            f"**{direct_en}**",
+            "",
+            "**Current machine status**",
+            f"- Average load: {avg_load:.2f}A",
+            f"- Anomalies: {anomalies}",
+            f"- Bottlenecks: {bottlenecks}",
+        ]
+        lines_nl = [
+            f"**{direct_nl}**",
+            "",
+            "**Huidige machinestatus**",
+            f"- Gemiddelde belasting: {avg_load:.2f}A",
+            f"- Afwijkingen: {anomalies}",
+            f"- Knelpunten: {bottlenecks}",
+        ]
+
+        for summary in machine_summaries[: min(4, len(machine_summaries))]:
+            lines_en.append(f"- {summary['label']}: {summary['current']:.2f}A, {summary['status']}, trend {summary['trend_label']}")
+            lines_nl.append(f"- {summary['label']}: {summary['current']:.2f}A, {summary['status']}, trend {summary['trend_label']}")
+
+        if fallback_machine:
+            lines_en.append(f"- Action: check {fallback_machine['label']} first")
+            lines_nl.append(f"- Actie: controleer {fallback_machine['label']} eerst")
+
+        return result(
+            t("\n".join(lines_en), "\n".join(lines_nl)),
+            target_page="Dashboard",
+            target_label=t("Open live dashboard", "Open live dashboard"),
+            chart_machine=fallback_machine["machine"] if fallback_machine else None,
+        )
+
+    return result(
+        t(
+            "No machine data available yet. Connect a device or run simulation to get live answers.",
+            "Nog geen machine-data beschikbaar. Verbind een apparaat of start simulatie voor live antwoorden."
+        ),
+        target_page="Device Connection",
+        target_label=t("Open device connection", "Open device connection"),
+        target_state={"pending_mode": "Live"},
+    )
+
+
+def build_ai_context_snapshot(max_events=8):
+    """Compact context payload for external AI so it can answer with current app data."""
+    df_local = st.session_state.get("df", pd.DataFrame())
+    machine_names = list(st.session_state.get("machine_names", []))
+    event_history = list(st.session_state.get("event_history", []))
+
+    machine_items = []
+    if isinstance(df_local, pd.DataFrame) and not df_local.empty:
+        machine_cols = [c for c in df_local.columns if str(c).startswith("current_")]
+        for col_name in machine_cols:
+            try:
+                idx = int(str(col_name).split("_")[1])
+            except Exception:
+                continue
+            series = pd.to_numeric(df_local[col_name], errors="coerce").dropna()
+            if series.empty:
+                continue
+            current_value = float(series.iloc[-1])
+            average_value = float(series.mean())
+            peak_value = float(series.max())
+            trend_value = float(np.polyfit(range(len(series)), series.to_numpy(dtype=float), 1)[0]) if len(series) > 5 else 0.0
+            machine_items.append({
+                "machine_index": idx,
+                "machine_name": machine_names[idx - 1] if idx - 1 < len(machine_names) else f"Machine {idx}",
+                "current_a": round(current_value, 3),
+                "avg_a": round(average_value, 3),
+                "peak_a": round(peak_value, 3),
+                "trend": round(trend_value, 5),
+            })
+
+    events = []
+    for event in event_history[: max(1, int(max_events))]:
+        events.append({
+            "timestamp": str(event.get("timestamp", "")),
+            "type": str(event.get("type", "")),
+            "message": str(event.get("message", "")),
+            "machine": event.get("machine"),
+        })
+
+    avg_load = 0.0
+    if machine_items:
+        avg_load = float(np.mean([item["avg_a"] for item in machine_items]))
+
+    return {
+        "mode": str(st.session_state.get("mode", "Simulation")),
+        "device_connected": bool(st.session_state.get("device_connected", False)),
+        "cloud_bridge_enabled": bool(st.session_state.get("cloud_bridge_enabled", False)),
+        "num_machines": int(st.session_state.get("num_machines", len(machine_items) or 0)),
+        "anomalies_count": len(st.session_state.get("anomalies", [])),
+        "bottlenecks_count": len(st.session_state.get("bottlenecks", [])),
+        "avg_load_a": round(avg_load, 3),
+        "machine_items": machine_items,
+        "recent_events": events,
+    }
+
+
+def query_external_ai_answer(question, context_payload):
+    """Query external AI if API key exists; return None when unavailable."""
+    api_key = str(os.getenv("OPENAI_API_KEY", "")).strip()
+    if not api_key:
+        try:
+            api_key = str(st.secrets.get("OPENAI_API_KEY", "")).strip()
+        except Exception:
+            api_key = ""
+    if not api_key:
+        return None
+
+    model_name = str(os.getenv("OPENAI_MODEL", "gpt-4.1-mini")).strip() or "gpt-4.1-mini"
+    response_style = str(st.session_state.get("ai_response_style", "Detailed"))
+    technical_level = str(st.session_state.get("ai_technical_level", "Simple"))
+    auto_advice = bool(st.session_state.get("ai_auto_advice", True))
+    style_instruction = "Keep answers short (max 4 bullets)." if response_style == "Short" else "Give a complete but concise answer (max 8 bullets)."
+    level_instruction = "Use plain language and avoid jargon." if technical_level == "Simple" else "Use technical terms where useful."
+    advice_instruction = "Always include one next action." if auto_advice else "Do not include advice unless explicitly asked."
+    system_prompt = (
+        "You are an industrial monitoring assistant inside a Streamlit app. "
+        "Answer using ONLY provided context. Keep answers concise and practical. "
+        "Use bullet points. "
+        "If question language is Dutch, answer in Dutch; otherwise English."
+        f" {style_instruction} {level_instruction} {advice_instruction}"
+    )
+    user_prompt = (
+        f"Question: {str(question or '').strip()}\n\n"
+        f"Context JSON:\n{json.dumps(context_payload, ensure_ascii=False)}"
+    )
+
+    payload = {
+        "model": model_name,
+        "temperature": 0.2,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+    }
+
+    req = urllib_request.Request(
+        "https://api.openai.com/v1/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib_request.urlopen(req, timeout=15) as resp:
+            response_data = json.loads(resp.read().decode("utf-8"))
+        text = (
+            response_data.get("choices", [{}])[0]
+            .get("message", {})
+            .get("content", "")
+        )
+        text = str(text or "").strip()
+        return text or None
+    except (urllib_error.URLError, TimeoutError, ValueError, KeyError, IndexError):
+        return None
+
+
+def build_conversation_context_prompt(question, conversation_history):
+    """Build a prompt that includes recent conversation history for follow-up understanding."""
+    if not conversation_history or len(conversation_history) == 0:
+        return question
+    
+    # Include last 3 conversation turns for context
+    recent_turns = conversation_history[-3:]
+    context_lines = []
+    for turn in recent_turns:
+        context_lines.append(f"Q: {turn.get('question', '')}")
+        context_lines.append(f"A: {turn.get('answer', '')}")
+    
+    context_text = "\n".join(context_lines)
+    enhanced_prompt = f"""Previous conversation context:
+{context_text}
+
+Follow-up question:
+{question}"""
+    return enhanced_prompt
+
+
+def resolve_ai_assistant_result(question, conversation_history=None):
+    """Use external AI with app context when configured; fallback to local assistant logic."""
+    # Enhance question with conversation context if available
+    if conversation_history and len(conversation_history) > 0:
+        enhanced_question = build_conversation_context_prompt(question, conversation_history)
+    else:
+        enhanced_question = question
+    
+    local_result = build_ai_assistant_result(question)  # Always use original question for local intent matching
+    context_payload = build_ai_context_snapshot()
+    ai_text = query_external_ai_answer(enhanced_question, context_payload)  # Use enhanced question for external AI
+    if ai_text:
+        local_result["message"] = ai_text
+        local_result["source"] = "external"
+    else:
+        local_result["source"] = "local"
+    if not bool(st.session_state.get("ai_auto_advice", True)):
+        lines = [line for line in str(local_result.get("message", "")).splitlines() if line.strip()]
+        lines = [line for line in lines if ("action:" not in line.lower() and "actie:" not in line.lower())]
+        local_result["message"] = "\n".join(lines)
+    if str(st.session_state.get("ai_response_style", "Detailed")) == "Short":
+        lines = [line for line in str(local_result.get("message", "")).splitlines() if line.strip()]
+        local_result["message"] = "\n".join(lines[:5])
+    return local_result
+
+
+def generate_ai_assistant_response(question):
+    return resolve_ai_assistant_result(question)["message"]
+
+
+def render_ai_assistant_machine_chart(machine_idx, df_local):
+    """Render a focused trend chart for the machine referenced by the AI assistant."""
+    if not machine_idx or not isinstance(df_local, pd.DataFrame) or df_local.empty:
+        return
+    col_name = f"current_{int(machine_idx)}"
+    if col_name not in df_local.columns:
+        return
+
+    chart_df = df_local.copy().tail(60)
+    y_values = pd.to_numeric(chart_df[col_name], errors="coerce")
+    if y_values.dropna().empty:
+        return
+
+    if "timestamp" in chart_df.columns:
+        x_values = pd.to_datetime(chart_df["timestamp"], errors="coerce")
+        if x_values.isna().all():
+            x_values = list(range(len(chart_df)))
+    else:
+        x_values = list(range(len(chart_df)))
+
+    machine_names = list(st.session_state.get("machine_names", []))
+    machine_label = machine_names[int(machine_idx) - 1] if int(machine_idx) - 1 < len(machine_names) else f"Machine {int(machine_idx)}"
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=x_values,
+        y=y_values,
+        mode="lines",
+        name=machine_label,
+        line=dict(color="#3b82f6", width=3),
+        fill="tozeroy",
+        fillcolor="rgba(59, 130, 246, 0.18)",
+    ))
+    fig.update_layout(
+        title=t(f"Trend for {machine_label}", f"Trend voor {machine_label}"),
+        template=plotly_template,
+        height=280,
+        margin=dict(l=20, r=20, t=44, b=20),
+        plot_bgcolor=plot_bg_color,
+        paper_bgcolor=plot_bg_color,
+        font=dict(color=plot_text_color),
+        xaxis=dict(gridcolor=plot_grid_color, tickfont=dict(color=plot_tick_color)),
+        yaxis=dict(title=t("Current (A)", "Stroom (A)"), gridcolor=plot_grid_color, zerolinecolor=plot_line_color, tickfont=dict(color=plot_tick_color)),
+        showlegend=False,
+    )
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "displaylogo": False})
+
+
+def render_capability_action_grid(section_key, scope="all", show_buttons=True):
+    """Functional value section with page-specific item sets."""
+    items = [
+        {
+            "id": "smart_ai",
+            "title": t("Smart AI", "Slimme AI"),
+            "desc": t("Automatic insights and predictions.", "Automatische inzichten en voorspellingen."),
+            "btn": t("Open AI Insights", "Open AI Inzichten"),
+            "action": "ai_insights",
+        },
+        {
+            "id": "easy_use",
+            "title": t("Easy to use", "Makkelijk gebruik"),
+            "desc": t("One-click flow for key actions.", "Eén-klik flow voor kernacties."),
+            "btn": t("Go to Dashboard", "Ga naar Dashboard"),
+            "action": "dashboard",
+        },
+        {
+            "id": "clear_ui",
+            "title": t("Clear UI", "Duidelijke UI"),
+            "desc": t("Keep the default clean overview.", "Behoud het standaard overzicht."),
+            "btn": t("Open Overview", "Open Overzicht"),
+            "action": "overview",
+        },
+        {
+            "id": "smart_alerts",
+            "title": t("Smart notifications", "Slimme meldingen"),
+            "desc": t("Only relevant alerts.", "Alleen relevante meldingen."),
+            "btn": t("Notification settings", "Meldingsinstellingen"),
+            "action": "notifications",
+        },
+        {
+            "id": "live_data",
+            "title": t("Live data", "Live data"),
+            "desc": t("Real-time status and performance.", "Real-time status en prestaties."),
+            "btn": t("Switch to Live", "Schakel naar Live"),
+            "action": "live",
+        },
+        {
+            "id": "personalization",
+            "title": t("Personalization", "Personalisatie"),
+            "desc": t("Adjust app behavior to preference.", "Pas de app aan naar voorkeur."),
+            "btn": t("Open Personalization", "Open Personalisatie"),
+            "action": "personalization",
+        },
+        {
+            "id": "ai_assistant",
+            "title": t("AI assistant", "AI assistent"),
+            "desc": t("Ask questions directly in the app.", "Stel direct vragen in de app."),
+            "btn": t("Open Assistant", "Open Assistent"),
+            "action": "assistant",
+        },
+        {
+            "id": "plug_play",
+            "title": t("Plug & play + offline", "Plug & play + offline"),
+            "desc": t("Quick setup and local fallback behavior.", "Snelle setup en lokaal fallback gedrag."),
+            "btn": t("Connect Device", "Verbind apparaat"),
+            "action": "connect_device",
+        },
+    ]
+
+    scope_map = {
+        "all": ["smart_ai", "easy_use", "clear_ui", "smart_alerts", "live_data", "personalization", "ai_assistant", "plug_play"],
+        "demo": ["easy_use", "clear_ui", "plug_play", "personalization"],
+        "live": ["live_data", "smart_alerts", "smart_ai", "ai_assistant"],
+        "platform": ["smart_ai", "easy_use", "smart_alerts", "live_data", "personalization", "ai_assistant", "plug_play"],
+    }
+    selected_ids = set(scope_map.get(scope, scope_map["all"]))
+    visible_items = [item for item in items if item["id"] in selected_ids]
+
+    cols = st.columns(2)
+    for idx, item in enumerate(visible_items):
+        with cols[idx % 2]:
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.markdown(f"### {item['title']}")
+            st.caption(item["desc"])
+            if show_buttons and st.button(item["btn"], key=f"{section_key}_{item['id']}", width="stretch", type="secondary"):
+                action = item["action"]
+                if action == "ai_insights":
+                    st.session_state.page = "AI Insights"
+                    st.rerun()
+                elif action == "dashboard":
+                    st.session_state.page = "Dashboard"
+                    st.rerun()
+                elif action == "overview":
+                    st.session_state.dashboard_preference = "Overview"
+                    st.session_state.page = "Dashboard"
+                    st.rerun()
+                elif action == "notifications":
+                    st.session_state.page = "Settings"
+                    st.session_state.settings_active_tab = "account"
+                    st.session_state.settings_account_section = "meldingen"
+                    st.rerun()
+                elif action == "live":
+                    if st.session_state.get("device_connected", False):
+                        st.session_state.mode = "Live"
+                        st.session_state.page = "Dashboard"
+                    else:
+                        st.session_state.page = "Device Connection"
+                        st.session_state.pending_mode = "Live"
+                    st.rerun()
+                elif action == "personalization":
+                    st.session_state.page = "Settings"
+                    st.session_state.settings_active_tab = "general"
+                    st.rerun()
+                elif action == "assistant":
+                    st.session_state.page = "AI Insights"
+                    st.session_state.ai_assistant_open = True
+                    st.rerun()
+                elif action == "connect_device":
+                    st.session_state.page = "Device Connection"
+                    st.session_state.pending_mode = "Live"
+                    st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
 
 # Initialiseer dataframe — in live modus beginnen we leeg zodat nooit
 # willekeurige simulatiedata de grafieken vervuilt.
@@ -1973,6 +3307,17 @@ if "df" not in st.session_state:
 
 df = st.session_state.df
 
+theme_tokens = get_theme_tokens()
+is_light_theme = bool(theme_tokens["is_light"])
+plotly_template = theme_tokens["plot_template"]
+plot_bg_color = theme_tokens["surface"]
+plot_text_color = theme_tokens["text"]
+plot_tick_color = theme_tokens["muted"]
+plot_grid_color = theme_tokens["plot_grid"]
+plot_line_color = theme_tokens["border"]
+plot_legend_bg = theme_tokens["card"]
+plot_legend_border = theme_tokens["border"]
+
 NAV_ALLOWED_PAGES = {
     "Welcome",
     "Dashboard",
@@ -1983,6 +3328,7 @@ NAV_ALLOWED_PAGES = {
     "FAQ",
     "Support",
     "AI Insights",
+    "Webshop",
     "Settings",
     "History",
     "Account",
@@ -1998,6 +3344,7 @@ SIDEBAR_HIDDEN_PAGES = {
     "Account",
 }
 DATA_REFRESH_PAGES = {"Dashboard", "Factory Analysis", "AI Insights", "History"}
+CLIENT_RENDERED_PAGES = {"Dashboard", "Factory Analysis"}
 
 DISPLAY_PAGE_LABELS = {
     "Welcome": "⌂ Welcome",
@@ -2009,6 +3356,7 @@ DISPLAY_PAGE_LABELS = {
     "FAQ": "◈ FAQ",
     "Support": "◈ Support",
     "AI Insights": "⌬ AI Insights",
+    "Webshop": "🛒 Webshop",
     "History": "⚙ History",
     "Settings": "⚙ Settings",
     "Account": "👤 Account",
@@ -2050,6 +3398,10 @@ def apply_navigation_query_params():
 def render_page_selector(current_page):
     """Render redesigned top navigation bar and return the active page."""
 
+    protected_pages = {"Dashboard", "Factory Analysis"}
+    if not st.session_state.get("auth_user") and current_page in protected_pages:
+        return current_page
+
     if current_page in SIDEBAR_HIDDEN_PAGES:
         return current_page
 
@@ -2067,12 +3419,18 @@ def render_page_selector(current_page):
     for idx, (page_name, label) in enumerate(nav_items):
         with nav_cols[idx]:
             is_active = current_page == page_name
+            is_disabled = page_name == "AI Insights"
+            help_text = None
+            if is_disabled:
+                help_text = t("Coming soon", "Binnenkort beschikbaar")
+            
             if st.button(
                 label,
                 key=f"top_nav_{page_name.replace(' ', '_').lower()}",
                 width="stretch",
                 type="primary" if is_active else "secondary",
-                disabled=is_active,
+                disabled=is_active or is_disabled,
+                help=help_text,
             ):
                 st.session_state.page = page_name
                 st.rerun()
@@ -2113,6 +3471,7 @@ def render_page_selector(current_page):
 def render_platform_sidebar_nav():
     """Custom fixed right-side nav panel — no Streamlit sidebar used."""
     current = st.session_state.get("page", "Platform")
+    theme = get_theme_tokens()
 
     active_platform = " pnav-active" if current == "Platform" else ""
     active_about = " pnav-active" if current == "About" else ""
@@ -2122,6 +3481,13 @@ def render_platform_sidebar_nav():
     active_account = " pnav-active" if current == "Account" else ""
     auth_token = str(st.query_params.get("auth", "") or "").strip()
     auth_suffix = f"&auth={auth_token}" if auth_token else ""
+    logo_data_uri = get_logo_data_uri()
+    logo_markup = (
+        f'<img src="{logo_data_uri}" alt="Smart Factory logo" '
+        'style="width:34px; height:34px; border-radius:10px; object-fit:cover; box-shadow:0 6px 16px rgba(14,165,233,0.28);">'
+        if logo_data_uri
+        else '<div class="pnav-brand-badge">SF</div>'
+    )
 
     st.markdown(
         f"""
@@ -2138,14 +3504,14 @@ def render_platform_sidebar_nav():
         .pnav-hamburger {{
             position: fixed;
             right: 16px;
-            top: 58px;
+            top: 84px;
             z-index: 10001;
             width: 58px;
             height: 58px;
-            background: linear-gradient(135deg, #1d4ed8 0%, #0f766e 100%);
-            border: 2px solid #3b82f6;
+            background: linear-gradient(135deg, {theme['accent']} 0%, #22d3ee 100%);
+            border: 2px solid {theme['accent_hover']};
             border-radius: 14px;
-            box-shadow: 0 4px 24px rgba(59,130,246,0.55), 0 2px 8px rgba(0,0,0,0.4);
+            box-shadow: 0 4px 24px {theme['accent_glow']}, 0 2px 8px rgba(0,0,0,0.25);
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -2154,7 +3520,7 @@ def render_platform_sidebar_nav():
             user-select: none;
         }}
         .pnav-hamburger:hover {{
-            box-shadow: 0 6px 32px rgba(59,130,246,0.8), 0 2px 12px rgba(0,0,0,0.5);
+            box-shadow: 0 6px 32px {theme['accent_glow']}, 0 2px 12px rgba(0,0,0,0.28);
         }}
         .pnav-hamburger-icon {{
             display: block;
@@ -2169,14 +3535,14 @@ def render_platform_sidebar_nav():
         .pnav-panel {{
             position: fixed;
             right: -260px;
-            top: 0;
-            height: 100vh;
+            top: 72px;
+            height: calc(100vh - 72px);
             width: 240px;
-            background: #0b1220;
-            border-left: 1px solid #1e293b;
+            background: {theme['card']};
+            border-left: 1px solid {theme['border']};
             z-index: 10000;
             padding: 28px 14px;
-            box-shadow: -6px 0 30px rgba(0,0,0,0.55);
+            box-shadow: -6px 0 30px rgba(0,0,0,0.22);
             transition: right 0.3s cubic-bezier(0.4,0,0.2,1);
             overflow-y: auto;
         }}
@@ -2189,18 +3555,58 @@ def render_platform_sidebar_nav():
         .pnav-panel-title {{
             font-size: 1rem;
             font-weight: 800;
-            color: #f8fafc;
+            color: {theme['text']};
             margin: 0 0 18px 0;
             padding-bottom: 12px;
-            border-bottom: 1px solid #1e293b;
+            border-bottom: 1px solid {theme['border']};
             letter-spacing: 0.04em;
+        }}
+        .pnav-brand {{
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 0 0 16px 0;
+            padding: 0 0 12px 0;
+            border-bottom: 1px solid {theme['border']};
+        }}
+        .pnav-brand-badge {{
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #14b8a6, #0ea5e9);
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 0.82rem;
+            letter-spacing: 0.02em;
+            box-shadow: 0 6px 16px rgba(14,165,233,0.28);
+        }}
+        .pnav-brand-text {{
+            display: flex;
+            flex-direction: column;
+            line-height: 1.05;
+        }}
+        .pnav-brand-kicker {{
+            font-size: 0.64rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: {theme['accent']};
+            font-weight: 700;
+        }}
+        .pnav-brand-title {{
+            font-size: 0.9rem;
+            color: {theme['text']};
+            font-weight: 700;
+            margin-top: 2px;
         }}
         .pnav-item {{
             display: block;
-            color: #dbeafe;
+            color: {theme['text']};
             text-decoration: none;
-            background: #1e293b;
-            border: 1px solid #334155;
+            background: {theme['surface']};
+            border: 1px solid {theme['border']};
             border-radius: 10px;
             padding: 10px 14px;
             margin-bottom: 8px;
@@ -2209,32 +3615,32 @@ def render_platform_sidebar_nav():
             transition: background 0.15s, border-color 0.15s;
         }}
         .pnav-item:hover {{
-            background: #273549;
-            border-color: #60a5fa;
-            color: #f8fafc;
+            background: rgba(59,130,246,0.16);
+            border-color: {theme['accent']};
+            color: {theme['text']};
         }}
         .pnav-item.pnav-active {{
-            background: linear-gradient(135deg, #1d4ed8, #0f766e);
-            border-color: #3b82f6;
-            color: #fff;
+            background: linear-gradient(135deg, {theme['accent']} 0%, #22d3ee 100%);
+            border-color: {theme['accent_hover']};
+            color: #06223f;
             cursor: default;
             pointer-events: none;
         }}
         .pnav-account {{
             margin-top: 14px;
-            border: 1px solid #334155;
-            background: linear-gradient(180deg, rgba(15,23,42,0.95) 0%, rgba(17,24,39,0.95) 100%);
+            border: 1px solid {theme['border']};
+            background: {theme['surface']};
             border-radius: 12px;
             padding: 12px;
         }}
         .pnav-account-title {{
-            color: #f8fafc;
+            color: {theme['text']};
             font-size: 0.9rem;
             font-weight: 800;
             margin: 0 0 8px 0;
         }}
         .pnav-account-row {{
-            color: #cbd5e1;
+            color: {theme['muted']};
             font-size: 0.82rem;
             margin: 4px 0;
         }}
@@ -2247,9 +3653,9 @@ def render_platform_sidebar_nav():
         .pnav-chip {{
             padding: 2px 8px;
             border-radius: 999px;
-            border: 1px solid #334155;
-            background: #1e293b;
-            color: #dbeafe;
+            border: 1px solid {theme['border']};
+            background: rgba(59,130,246,0.12);
+            color: {theme['muted']};
             font-size: 0.72rem;
             font-weight: 700;
         }}
@@ -2259,7 +3665,13 @@ def render_platform_sidebar_nav():
             <span class="pnav-hamburger-icon"></span>
         </label>
         <div class="pnav-panel">
-            <div class="pnav-panel-title">{t('Smart Factory Suite', 'Smart Factory Suite')}</div>
+            <div class="pnav-brand">
+                {logo_markup}
+                <div class="pnav-brand-text">
+                    <span class="pnav-brand-kicker">{t('Smart Factory', 'Smart Factory')}</span>
+                    <span class="pnav-brand-title">{t('Monitoring Suite', 'Monitoring Suite')}</span>
+                </div>
+            </div>
             <a href="?page=Platform{auth_suffix}" target="_self" class="pnav-item{active_platform}">◈ {t('Platform', 'Platform')}</a>
             <a href="?page=About{auth_suffix}" target="_self" class="pnav-item{active_about}">{t('About us', 'Over ons')}</a>
             <a href="?page=Contact{auth_suffix}" target="_self" class="pnav-item{active_contact}">{t('Contact', 'Contact')}</a>
@@ -2397,6 +3809,16 @@ def build_client_realtime_component_html(machine_names, endpoints, mode, refresh
     """Return an HTML app that updates values and Plotly charts client-side."""
     color_scale = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899', '#84cc16', '#a78bfa']
     initial_history = initial_history or {"times": [], "series": {}}
+    is_light = st.session_state.get("theme_preference", "Dark") == "Light"
+    theme = {
+        "surface": "#dfe8f3" if is_light else "#0f172a",
+        "card": "#d8e3f0" if is_light else "#1e293b",
+        "border": "#b6c8dc" if is_light else "#334155",
+        "text": "#0f172a" if is_light else "#f8fafc",
+        "muted": "#2e4662" if is_light else "#94a3b8",
+        "grid": "rgba(148,163,184,0.25)" if is_light else "rgba(148,163,184,0.22)",
+        "template": "plotly_white" if is_light else "plotly_dark",
+    }
     config = {
         "machineNames": list(machine_names),
         "endpoints": list(endpoints),
@@ -2409,16 +3831,17 @@ def build_client_realtime_component_html(machine_names, endpoints, mode, refresh
         "initialHistory": initial_history,
         "initialSnapshot": (initial_history or {}).get("snapshot", {}),
         "initialVoltage": (initial_history or {}).get("voltage"),
+        "theme": theme,
     }
     config_json = json.dumps(config)
 
     return f"""
-        <div id="rt-root" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color:#f1f5f9;">
+        <div id="rt-root" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color:{theme['text']};">
             <div id="rt-metrics" style="display:{'grid' if show_metrics else 'none'}; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:0 0 18px 0;"></div>
-            <div style="margin:0 0 10px 0; font-size:1.1rem; font-weight:700; color:#f8fafc;">{panel_title}</div>
+            <div style="margin:0 0 10px 0; font-size:1.1rem; font-weight:700; color:{theme['text']};">{panel_title}</div>
             <div id="rt-gauges" style="width:100%; min-height:320px;"></div>
-            <div style="margin:18px 0 10px 0; font-size:1.1rem; font-weight:700; color:#f8fafc;">Stroom Over Tijd</div>
-            <div id="rt-trend" style="width:100%; min-height:420px; background:#0f172a; border:1px solid #1e293b; border-radius:14px; padding:8px;"></div>
+            <div style="margin:18px 0 10px 0; font-size:1.1rem; font-weight:700; color:{theme['text']};">Stroom Over Tijd</div>
+            <div id="rt-trend" style="width:100%; min-height:420px; background:{theme['surface']}; border:1px solid {theme['border']}; border-radius:14px; padding:8px;"></div>
         </div>
         <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
         <script>
@@ -2427,6 +3850,7 @@ def build_client_realtime_component_html(machine_names, endpoints, mode, refresh
             const machineNames = config.machineNames;
             const endpoints = config.endpoints;
             const colors = config.colors;
+            const theme = config.theme || {{}};
             const maxPoints = 100;
             const initialHistory = config.initialHistory || {{ times: [], series: {{}} }};
             const targetValues = Object.fromEntries(machineNames.map((name) => [name, 0.5]));
@@ -2471,9 +3895,9 @@ def build_client_realtime_component_html(machine_names, endpoints, mode, refresh
 
             function buildMetricCard(label, value) {{
                 return `
-                    <div style="background:#1e293b;border:1px solid #334155;border-radius:14px;padding:14px 16px;">
-                        <div style="font-size:0.8rem;color:#94a3b8;margin-bottom:6px;">${{label}}</div>
-                        <div style="font-size:1.25rem;font-weight:700;color:#f8fafc;">${{value}}</div>
+                    <div style="background:${{theme.card}};border:1px solid ${{theme.border}};border-radius:14px;padding:14px 16px;">
+                        <div style="font-size:0.8rem;color:${{theme.muted}};margin-bottom:6px;">${{label}}</div>
+                        <div style="font-size:1.25rem;font-weight:700;color:${{theme.text}};">${{value}}</div>
                     </div>
                 `;
             }}
@@ -2510,16 +3934,41 @@ def build_client_realtime_component_html(machine_names, endpoints, mode, refresh
                         type: 'indicator',
                         mode: 'gauge+number',
                         value: displayValues[name] || 0,
-                        title: {{ text: name, font: {{ size: 13, color: '#f1f5f9' }} }},
-                        number: {{ suffix: ' A', font: {{ size: 22, color: colors[index % colors.length], family: 'monospace' }} }},
-                        gauge: {{ axis: {{ range: [0, 8] }}, bar: {{ color: colors[index % colors.length], thickness: 0.28 }}, bgcolor: '#1e293b', borderwidth: 0 }},
+                        title: {{ text: name, font: {{ size: 13, color: theme.text }} }},
+                        number: {{ suffix: ' A', font: {{ size: 23, color: colors[index % colors.length], family: 'monospace' }} }},
+                        gauge: {{
+                            axis: {{
+                                range: [0, 8],
+                                tickmode: 'linear',
+                                dtick: 1,
+                                tickwidth: 1,
+                                tickcolor: theme.border,
+                                tickfont: {{ size: 11, color: theme.muted }},
+                            }},
+                            bar: {{ color: colors[index % colors.length], thickness: 0.34 }},
+                            bgcolor: theme.card,
+                            borderwidth: 2,
+                            bordercolor: 'rgba(59,130,246,0.25)',
+                            steps: [
+                                {{ range: [0, 2], color: 'rgba(16,185,129,0.26)' }},
+                                {{ range: [2, 4], color: 'rgba(56,189,248,0.24)' }},
+                                {{ range: [4, 6], color: 'rgba(245,158,11,0.24)' }},
+                                {{ range: [6, 8], color: 'rgba(239,68,68,0.26)' }},
+                            ],
+                            threshold: {{
+                                line: {{ color: '#f43f5e', width: 4 }},
+                                thickness: 0.8,
+                                value: 6.2,
+                            }},
+                        }},
                         domain: {{ x: [x0, x1], y: [y0, y1] }},
                     }};
                 }});
                 Plotly.react('rt-gauges', data, {{
-                    paper_bgcolor: '#0f172a',
-                    plot_bgcolor: '#0f172a',
-                    font: {{ color: '#f1f5f9' }},
+                    template: theme.template,
+                    paper_bgcolor: theme.surface,
+                    plot_bgcolor: theme.surface,
+                    font: {{ color: theme.text }},
                     margin: {{ l: 10, r: 10, t: 10, b: 10 }},
                     height: 230 * rows,
                 }}, {{ displayModeBar: false, responsive: true }});
@@ -2556,16 +4005,16 @@ def build_client_realtime_component_html(machine_names, endpoints, mode, refresh
                 }});
 
                 Plotly.react(root, traces, {{
-                    template: 'plotly_dark',
+                    template: theme.template,
                     height,
                     margin: {{ l: isCompact ? 52 : 62, r: 20, t: 22, b: isCompact ? 68 : 54 }},
-                    paper_bgcolor: '#0f172a',
-                    plot_bgcolor: '#0f172a',
+                    paper_bgcolor: theme.surface,
+                    plot_bgcolor: theme.surface,
                     hovermode: 'x unified',
                     hoverlabel: {{
-                        bgcolor: '#111827',
-                        bordercolor: '#334155',
-                        font: {{ color: '#f8fafc', size: 12 }},
+                        bgcolor: theme.card,
+                        bordercolor: theme.border,
+                        font: {{ color: theme.text, size: 12 }},
                     }},
                     legend: {{
                         orientation: 'h',
@@ -2573,34 +4022,34 @@ def build_client_realtime_component_html(machine_names, endpoints, mode, refresh
                         y: 1.03,
                         xanchor: 'left',
                         x: 0,
-                        font: {{ size: 12, color: '#e2e8f0' }},
-                        bgcolor: 'rgba(15,23,42,0.55)',
-                        bordercolor: 'rgba(148,163,184,0.22)',
+                        font: {{ size: 12, color: theme.text }},
+                        bgcolor: theme.card,
+                        bordercolor: theme.border,
                         borderwidth: 1,
                     }},
                     xaxis: {{
-                        title: {{ text: 'Tijd', font: {{ size: 13, color: '#f8fafc' }} }},
+                        title: {{ text: 'Tijd', font: {{ size: 13, color: theme.text }} }},
                         categoryorder: 'array',
                         categoryarray: formattedTimes,
                         tickmode: 'array',
                         tickvals: tickValues,
-                        tickfont: {{ size: 12, color: '#dbeafe' }},
+                        tickfont: {{ size: 12, color: theme.muted }},
                         tickangle: isCompact ? -18 : 0,
                         showgrid: true,
-                        gridcolor: 'rgba(148,163,184,0.12)',
-                        linecolor: 'rgba(148,163,184,0.38)',
+                        gridcolor: theme.grid,
+                        linecolor: theme.border,
                         zeroline: false,
                     }},
                     yaxis: {{
-                        title: {{ text: 'Stroom (A)', font: {{ size: 13, color: '#f8fafc' }} }},
+                        title: {{ text: 'Stroom (A)', font: {{ size: 13, color: theme.text }} }},
                         range: [0, 8],
                         dtick: 1,
-                        tickfont: {{ size: 12, color: '#dbeafe' }},
+                        tickfont: {{ size: 12, color: theme.muted }},
                         showgrid: true,
-                        gridcolor: 'rgba(148,163,184,0.22)',
+                        gridcolor: theme.grid,
                         zeroline: true,
-                        zerolinecolor: 'rgba(148,163,184,0.40)',
-                        linecolor: 'rgba(148,163,184,0.38)',
+                        zerolinecolor: theme.border,
+                        linecolor: theme.border,
                     }},
                 }}, {{ displayModeBar: false, responsive: true, displaylogo: false }});
             }}
@@ -2639,15 +4088,13 @@ def build_client_realtime_component_html(machine_names, endpoints, mode, refresh
                     return;
                 }}
 
-                if (config.mode === 'Live') {{
-                    return;
-                }}
-
-                if (!endpoints.length) {{
+                const availableEndpoints = endpoints.filter((endpoint) => Boolean(endpoint));
+                if (!availableEndpoints.length) {{
                     return;
                 }}
 
                 const responses = await Promise.all(endpoints.map(async (endpoint) => {{
+                    if (!endpoint) return null;
                     try {{
                         const response = await fetch(endpoint, {{ cache: 'no-store' }});
                         if (!response.ok) throw new Error(`HTTP ${{response.status}}`);
@@ -2702,6 +4149,111 @@ def build_client_realtime_component_html(machine_names, endpoints, mode, refresh
         """
 
 
+def build_client_snapshot_component_html(snapshot_items, panel_title):
+    """Return a lightweight client-side snapshot bar chart to avoid Streamlit chart flicker."""
+    color_scale = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899', '#84cc16', '#a78bfa']
+    is_light = st.session_state.get("theme_preference", "Dark") == "Light"
+    config = {
+        "items": list(snapshot_items),
+        "panelTitle": str(panel_title),
+        "colors": color_scale,
+        "template": "plotly_white" if is_light else "plotly_dark",
+        "surface": "#dfe8f3" if is_light else "#0f172a",
+        "border": "#b6c8dc" if is_light else "#1e293b",
+        "text": "#0f172a" if is_light else "#f8fafc",
+    }
+    config_json = json.dumps(config)
+    html = """
+        <div id="snapshot-root" style="width:100%; min-height:280px; background:__SNAP_SURFACE__; border:1px solid __SNAP_BORDER__; border-radius:14px; padding:8px;"></div>
+        <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+        <script>
+            const snapshotConfig = __SNAPSHOT_CONFIG__;
+            const root = document.getElementById('snapshot-root');
+
+            function renderSnapshot() {
+                const items = snapshotConfig.items || [];
+                const labels = items.map((item) => item.label);
+                const values = items.map((item) => item.value);
+                const colors = values.map((_, index) => snapshotConfig.colors[index % snapshotConfig.colors.length]);
+
+                Plotly.react(root, [{
+                    x: labels,
+                    y: values,
+                    type: 'bar',
+                    marker: { color: colors },
+                    text: values.map((value) => `${Number(value).toFixed(2)}A`),
+                    textposition: 'outside',
+                    hovertemplate: '%{x}<br>Stroom: %{y:.2f} A<extra></extra>',
+                }], {
+                    title: snapshotConfig.panelTitle,
+                    template: snapshotConfig.template,
+                    height: 280,
+                    margin: { l: 20, r: 20, t: 42, b: 20 },
+                    plot_bgcolor: snapshotConfig.surface,
+                    paper_bgcolor: snapshotConfig.surface,
+                    font: { color: snapshotConfig.text },
+                    yaxis: { title: 'Stroom (A)', range: [0, 8] },
+                    xaxis: { title: 'Machines' },
+                }, { displayModeBar: false, responsive: true, displaylogo: false });
+            }
+
+            renderSnapshot();
+            window.addEventListener('resize', renderSnapshot);
+        </script>
+        """
+    html = html.replace("__SNAPSHOT_CONFIG__", config_json)
+    html = html.replace("__SNAP_SURFACE__", config["surface"])
+    html = html.replace("__SNAP_BORDER__", config["border"])
+    return html
+
+
+def render_client_snapshot_panel(snapshot_items, panel_title):
+    if not isinstance(snapshot_items, list) or len(snapshot_items) == 0:
+        st.info(t("No machine snapshot available yet.", "Nog geen machine-snapshot beschikbaar."))
+        return
+
+    labels = [str(item.get("label", "-")) for item in snapshot_items]
+    values_amp = []
+    for item in snapshot_items:
+        raw_value = pd.to_numeric(item.get("value", 0.0), errors="coerce")
+        value = float(raw_value) if pd.notna(raw_value) and np.isfinite(float(raw_value)) else 0.0
+        values_amp.append(value)
+    converted = [convert_amp_value(v) for v in values_amp]
+    values = [v[0] for v in converted]
+    unit = converted[0][1] if converted else "W"
+    color_scale = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899', '#84cc16', '#a78bfa']
+    machine_colors = dict(st.session_state.get("machine_colors", {}))
+    bar_colors = []
+    for idx, label in enumerate(labels):
+        color = machine_colors.get(label)
+        if not color:
+            color = color_scale[idx % len(color_scale)]
+        bar_colors.append(color)
+
+    fig_snapshot = go.Figure()
+    fig_snapshot.add_trace(go.Bar(
+        x=labels,
+        y=values,
+        marker_color=bar_colors,
+        text=[f"{value:.2f}{unit}" for value in values],
+        textposition='outside',
+        hovertemplate=t(f'%{{x}}<br>Value: %{{y:.2f}} {unit}<extra></extra>', f'%{{x}}<br>Waarde: %{{y:.2f}} {unit}<extra></extra>'),
+    ))
+    y_max = max(values) * 1.25 if values else 8.0
+    fig_snapshot.update_layout(
+        title=str(panel_title),
+        template=plotly_template,
+        height=290,
+        margin=dict(l=20, r=20, t=42, b=20),
+        plot_bgcolor=plot_bg_color,
+        paper_bgcolor=plot_bg_color,
+        font=dict(color=plot_text_color),
+        yaxis=dict(title=t(f'Value ({unit})', f'Waarde ({unit})'), range=[0, max(2.0, y_max)], gridcolor=plot_grid_color),
+        xaxis=dict(title=t('Machines', 'Machines')),
+    )
+    st.plotly_chart(fig_snapshot, width="stretch", config={'displayModeBar': False, 'displaylogo': False})
+
+
 def render_client_realtime_panel(machine_names, panel_title, show_metrics=True):
     """Render a client-side realtime panel that updates without Streamlit reruns."""
     connected_devices = st.session_state.get("connected_devices", [])
@@ -2718,12 +4270,7 @@ def render_client_realtime_panel(machine_names, panel_title, show_metrics=True):
             device.get("port", 80),
         )
 
-    endpoints = []
-    if st.session_state.get("mode") != "Live":
-        for machine_name in machine_names:
-            endpoint = endpoint_by_name.get(machine_name)
-            if endpoint:
-                endpoints.append(endpoint)
+    endpoints = [endpoint_by_name.get(machine_name) for machine_name in machine_names]
 
     initial_history = {
         "times": [],
@@ -2733,6 +4280,19 @@ def render_client_realtime_panel(machine_names, panel_title, show_metrics=True):
     }
 
     filtered_df = current_df
+    period = str(st.session_state.get("data_time_period", "1h"))
+    if isinstance(current_df, pd.DataFrame) and not current_df.empty and "timestamp" in current_df.columns:
+        timestamp_series = pd.to_datetime(current_df["timestamp"], errors="coerce")
+        now_ts = pd.Timestamp.now()
+        cutoff = None
+        if period == "1h":
+            cutoff = now_ts - pd.Timedelta(hours=1)
+        elif period == "1d":
+            cutoff = now_ts - pd.Timedelta(days=1)
+        elif period == "1w":
+            cutoff = now_ts - pd.Timedelta(days=7)
+        if cutoff is not None:
+            filtered_df = current_df.loc[timestamp_series >= cutoff].copy()
     history_anchor_ts = st.session_state.get("history_anchor_ts")
     if isinstance(current_df, pd.DataFrame) and not current_df.empty and history_anchor_ts and "timestamp" in current_df.columns:
         timestamp_series = pd.to_datetime(current_df["timestamp"], errors="coerce")
@@ -2781,6 +4341,13 @@ page, connection_prompt_required = resolve_page_state()
 
 # Pages that require login
 PROTECTED_PAGES = {"Dashboard", "Factory Analysis"}
+hero_logo_data_uri = get_logo_data_uri()
+hero_logo_markup = (
+    f'<img src="{hero_logo_data_uri}" alt="Smart Factory logo" '
+    'style="width:44px; height:44px; border-radius:12px; object-fit:cover; box-shadow:0 8px 20px rgba(14,165,233,0.28);">'
+    if hero_logo_data_uri
+    else '<div style="width:44px; height:44px; border-radius:12px; background:linear-gradient(135deg,#14b8a6,#0ea5e9); color:white; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:1rem; letter-spacing:0.02em; box-shadow:0 8px 20px rgba(14,165,233,0.28);">SF</div>'
+)
 
 # If trying to access a protected page without being logged in, show login dialog
 if page in PROTECTED_PAGES and not st.session_state.get("auth_user"):
@@ -2788,6 +4355,13 @@ if page in PROTECTED_PAGES and not st.session_state.get("auth_user"):
     st.markdown(
         f"""
         <div class="page-hero">
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">
+                {hero_logo_markup}
+                <div style="display:flex; flex-direction:column; line-height:1.1;">
+                    <span style="font-size:0.76rem; text-transform:uppercase; letter-spacing:0.08em; color:#93c5fd; font-weight:700;">{t('Smart Factory', 'Smart Factory')}</span>
+                    <span style="font-size:0.96rem; color:#e2e8f0; font-weight:600;">{t('Monitoring Platform', 'Monitoring Platform')}</span>
+                </div>
+            </div>
             <p class="page-hero-title">{t('Access Denied', 'Toegang Geweigerd')}</p>
             <p class="page-hero-sub">{t('This page requires you to be logged in. Please log in with your account.', 'Deze pagina vereist dat je bent ingelogd. Log in met je account.')}</p>
         </div>
@@ -2920,6 +4494,7 @@ if (
 chart_keys = [
     'dashboard_realtime',
     'dashboard_distribution',
+    'dashboard_snapshot',
     'factory_analysis',
     'ai_table'  # Add AI table pause state
 ]
@@ -2931,18 +4506,36 @@ for ck in chart_keys:
 
 df = st.session_state.df
 
-# Auto-refresh: herlaad de pagina op data-pagina's zodat Python-metrics
-# (bar chart, gemiddelden, snapshot) ook met live ESP32-data worden bijgewerkt.
-if page in DATA_REFRESH_PAGES:
+# Auto-refresh: avoid full-page reruns on client-rendered chart pages
+# to prevent visible Plotly remount flicker.
+if page in DATA_REFRESH_PAGES and page not in CLIENT_RENDERED_PAGES:
     _refresh_ms = max(1000, int(st.session_state.get("refresh_rate", 2) * 1000))
     st_autorefresh(interval=_refresh_ms, key="data_autorefresh")
-    df = refresh_data_frame(page)
+
+df = refresh_data_frame(page)
+
+# Show notification for AI Insights being under construction
+if page == "AI Insights" and not st.session_state.ai_insights_notified:
+    st.toast(t("🔨 AI Insights is under construction.", "🔨 AI Inzichten is in aanbouw."), icon="⏳")
+    st.session_state.ai_insights_notified = True
+
+# Show notification for Webshop being under construction
+if page == "Webshop" and not st.session_state.webshop_notified:
+    st.toast(t("🔨 Webshop is under construction. Expected Q3 2026.", "🔨 Webshop is in aanbouw. Verwacht Q3 2026."), icon="⏳")
+    st.session_state.webshop_notified = True
 
 if page == "Welcome":
     st.title("⌂ Welkom")
     st.markdown(
-        """
+        f"""
         <div class="page-hero">
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">
+                {hero_logo_markup}
+                <div style="display:flex; flex-direction:column; line-height:1.1;">
+                    <span style="font-size:0.76rem; text-transform:uppercase; letter-spacing:0.08em; color:#93c5fd; font-weight:700;">Smart Factory</span>
+                    <span style="font-size:0.96rem; color:#e2e8f0; font-weight:600;">Monitoring Platform</span>
+                </div>
+            </div>
             <p class="page-hero-title">Smart Factory Monitoring Platform</p>
             <p class="page-hero-sub">Dit platform helpt operators, maintenance teams en productiecoordinatie om machineprestaties in realtime te monitoren, afwijkingen vroeg te signaleren en onderhoud beter te plannen.</p>
             <span class="page-chip">Realtime monitoring</span>
@@ -2953,204 +4546,210 @@ if page == "Welcome":
         unsafe_allow_html=True,
     )
 
-    st.subheader("Wie Wij Zijn")
+    st.subheader(t("Who We Are", "Wie Wij Zijn"))
     col_about_a, col_about_b = st.columns(2)
     with col_about_a:
         st.markdown('<div class="feature-card">', unsafe_allow_html=True)
-        st.markdown("### Missie")
-        st.markdown(
+        st.markdown("### " + t("Mission", "Missie"))
+        st.markdown(t(
+            "Help production teams with clear, reliable and immediately usable machine insights.",
             "Productieteams helpen met duidelijke, betrouwbare en direct bruikbare machine-inzichten."
-        )
+        ))
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col_about_b:
         st.markdown('<div class="feature-card">', unsafe_allow_html=True)
-        st.markdown("### Visie")
-        st.markdown(
+        st.markdown("### " + t("Vision", "Visie"))
+        st.markdown(t(
+            "From reactive maintenance to predictable and data-driven steering on capacity, uptime and quality.",
             "Van reactief onderhoud naar voorspelbaar en datagedreven sturen op capaciteit, uptime en kwaliteit."
-        )
+        ))
         st.markdown('</div>', unsafe_allow_html=True)
 
-    st.subheader("Wat Wij Doen")
-    st.markdown("""
-    - Verzamelen van live machinegegevens via ESP32-devices
-    - Visualiseren van stroom- en prestatiegegevens in overzichtelijke dashboards
-    - Detecteren van afwijkingen en operationele knelpunten
-    - Ondersteunen van beslissingen met AI-analyses en aanbevelingen
-    - Vastleggen van gebeurtenissen voor analyse, audits en opvolging
-    """)
+    st.subheader(t("What We Do", "Wat Wij Doen"))
+    st.markdown(t(
+        """- Collection of live machine data via ESP32 devices
+- Visualization of current and performance data in clear dashboards
+- Detection of anomalies and operational bottlenecks
+- Decision support with AI analysis and recommendations
+- Recording of events for analysis, audits and follow-up
+""",
+        """- Verzamelen van live machinegegevens via ESP32-devices
+- Visualiseren van stroom- en prestatiegegevens in overzichtelijke dashboards
+- Detecteren van afwijkingen en operationele knelpunten
+- Ondersteunen van beslissingen met AI-analyses en aanbevelingen
+- Vastleggen van gebeurtenissen voor analyse, audits en opvolging
+"""
+    ))
 
-    st.subheader("Organisatie En Team")
+    st.subheader(t("Organization And Team", "Organisatie En Team"))
     col_team_a, col_team_b = st.columns(2)
     with col_team_a:
         st.markdown('<div class="feature-card">', unsafe_allow_html=True)
-        st.markdown("### Voor Wie")
-        st.markdown("Operators, technische dienst, productieleiding en procesverbetering.")
+        st.markdown("### " + t("For Whom", "Voor Wie"))
+        st.markdown(t(
+            "Operators, technical service, production management and process improvement.",
+            "Operators, technische dienst, productieleiding en procesverbetering."
+        ))
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col_team_b:
         st.markdown('<div class="feature-card">', unsafe_allow_html=True)
-        st.markdown("### Werkwijze")
-        st.markdown("Kleine stappen, snelle feedback en continue verbetering op basis van meetdata.")
+        st.markdown("### " + t("Working Method", "Werkwijze"))
+        st.markdown(t(
+            "Small steps, fast feedback and continuous improvement based on measurement data.",
+            "Kleine stappen, snelle feedback en continue verbetering op basis van meetdata."
+        ))
         st.markdown('</div>', unsafe_allow_html=True)
 
-    st.subheader("Wat Je In Het Platform Ziet")
+    st.subheader(t("What You See In The Platform", "Wat Je In Het Platform Ziet"))
     col_a, col_b = st.columns(2)
     with col_a:
         st.markdown('<div class="feature-card">', unsafe_allow_html=True)
-        st.markdown("### Dashboard")
-        st.markdown("Realtime trends, gemiddelde belasting, pieken en actuele status per machine.")
+        st.markdown("### " + t("Dashboard", "Dashboard"))
+        st.markdown(t(
+            "Real-time trends, average load, peaks and current status per machine.",
+            "Realtime trends, gemiddelde belasting, pieken en actuele status per machine."
+        ))
         st.markdown('</div>', unsafe_allow_html=True)
 
         st.markdown('<div class="feature-card">', unsafe_allow_html=True)
-        st.markdown("### Machine Overzicht")
-        st.markdown("Vergelijking tussen machines, trendanalyse en prestatieverschillen over tijd.")
+        st.markdown("### " + t("Machine Overview", "Machine Overzicht"))
+        st.markdown(t(
+            "Comparison between machines, trend analysis and performance differences over time.",
+            "Vergelijking tussen machines, trendanalyse en prestatieverschillen over tijd."
+        ))
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col_b:
         st.markdown('<div class="feature-card">', unsafe_allow_html=True)
-        st.markdown("### AI Insights")
-        st.markdown("Automatische signalering van anomalieen, bottlenecks en aanbevelingen per machine.")
+        st.markdown("### " + t("AI Insights", "AI Insights"))
+        st.markdown(t(
+            "Automatic signaling of anomalies, bottlenecks and recommendations per machine.",
+            "Automatische signalering van anomalieen, bottlenecks en aanbevelingen per machine."
+        ))
         st.markdown('</div>', unsafe_allow_html=True)
 
         st.markdown('<div class="feature-card">', unsafe_allow_html=True)
-        st.markdown("### History")
-        st.markdown("Logboek van gebeurtenissen, connecties en afwijkingen voor analyse en rapportage.")
+        st.markdown("### " + t("History", "Geschiedenis"))
+        st.markdown(t(
+            "Log of events, connections and anomalies for analysis and reporting.",
+            "Logboek van gebeurtenissen, connecties en afwijkingen voor analyse en rapportage."
+        ))
         st.markdown('</div>', unsafe_allow_html=True)
 
-    st.subheader("Support En Contact")
-    st.markdown("""
-    - Device onboarding: via `+ Device Connect` in de bovenbalk
-    - Technische support: controleer eerst Device Connection en History
-    - Operationele vragen: gebruik Dashboard en AI Insights als startpunt voor diagnose
-    """)
+    st.subheader(t("Support And Contact", "Support En Contact"))
+    st.markdown(t(
+        """- Device onboarding: via `+ Device Connect` in the top bar
+- Technical support: check Device Connection and History first
+- Operational questions: use Dashboard and AI Insights as starting point for diagnosis
+""",
+        """- Device onboarding: via `+ Device Connect` in de bovenbalk
+- Technische support: controleer eerst Device Connection en History
+- Operationele vragen: gebruik Dashboard en AI Insights als startpunt voor diagnose
+"""
+    ))
 
-    st.subheader("Aan De Slag")
-    st.markdown("""
-    1. Voeg een device toe via `+ Device Connect` in de bovenbalk.
-    2. Controleer of Live mode actief is en data binnenkomt.
-    3. Gebruik Dashboard, Machine Overzicht en AI Insights voor monitoring en optimalisatie.
-    """)
+    st.subheader(t("Get Started", "Aan De Slag"))
+    st.markdown(t(
+        """1. Add a device via `+ Device Connect` in the top bar.
+2. Check if Live mode is active and data is coming in.
+3. Use Dashboard, Machine Overview and AI Insights for monitoring and optimization.
+""",
+        """1. Voeg een device toe via `+ Device Connect` in de bovenbalk.
+2. Controleer of Live mode actief is en data binnenkomt.
+3. Gebruik Dashboard, Machine Overzicht en AI Insights voor monitoring en optimalisatie.
+"""
+    ))
 
     _, mid, _ = st.columns([1, 2, 1])
     with mid:
-        if st.button("📶 Bluetooth verbinden met ESP32", type="primary", width="stretch"):
+        if st.button(t("📶 Connect Bluetooth to ESP32", "📶 Bluetooth verbinden met ESP32"), type="primary", width="stretch"):
             st.session_state.welcome_shown = True
             st.session_state.page = "Device Connection"
             st.session_state.pending_mode = 'Live'
             st.rerun()
-        if st.button("Doorgaan zonder verbinden", type="secondary", width="stretch"):
+        if st.button(t("Continue without connecting", "Doorgaan zonder verbinden"), type="secondary", width="stretch"):
             st.session_state.welcome_shown = True
             st.session_state.page = "Dashboard"
             st.rerun()
 
 elif page == "Home":
-    st.title("⌂ Smart Factory Platform")
+    st.title(t("⌂ Smart Factory Platform", "⌂ Slimme Fabriek Platform"))
 
-    mode_indicator = st.session_state.get('mode', 'Simulation')
-    device_status = "Live" if st.session_state.get('device_connected', False) else "Simulation"
-    endpoint_info = st.session_state.get('device_endpoint', 'Local simulation')
+    mode_indicator = st.session_state.get('mode', t('Simulation', 'Simulatie'))
+    device_status = t("Live", "Live") if st.session_state.get('device_connected', False) else t("Simulation", "Simulatie")
+    endpoint_info = st.session_state.get('device_endpoint', t('Local simulation', 'Lokale simulatie'))
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("⦿ Mode", mode_indicator)
+        st.metric("⦿ " + t("Mode", "Modus"), mode_indicator)
     with col2:
-        st.metric("⦿ Device", device_status)
+        st.metric(t("⦿ Device", "⦿ Apparaat"), device_status)
     with col3:
-        st.caption(f"Endpoint: {endpoint_info}")
+        st.caption(f"{t('Endpoint', 'Eindpunt')}: {endpoint_info}")
 
     st.markdown('<div class="welcome-card">', unsafe_allow_html=True)
-    st.markdown("""
-    ### Welkom bij jouw Intelligente Fabrieksdashboard
+    st.markdown(t(
+        """### Welcome to Your Intelligent Factory Dashboard
 
-    **Real-time monitoring • AI-gedreven inzichten • Geoptimaliseerde productie**
+**Real-time monitoring • AI-driven insights • Optimized production**
 
-    Dit platform geeft je volledige controle over je fabrieksomgeving met live data, geavanceerde analyses en intelligente aanbevelingen.
-    """)
+This platform gives you complete control over your factory environment with live data, advanced analytics and intelligent recommendations.
+""",
+        """### Welkom bij jouw Intelligente Fabrieksdashboard
+
+**Real-time monitoring • AI-gedreven inzichten • Geoptimaliseerde productie**
+
+Dit platform geeft je volledige controle over je fabrieksomgeving met live data, geavanceerde analyses en intelligente aanbevelingen.
+"""
+    ))
     st.markdown('</div>', unsafe_allow_html=True)
 
-    st.subheader("⌗ Systeem Overzicht")
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        st.markdown('<div class="status-card">', unsafe_allow_html=True)
-        st.metric("Actieve Machines", NUM_MACHINES)
-        st.caption("Machines in monitoring")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    with col2:
-        st.markdown('<div class="status-card">', unsafe_allow_html=True)
-        st.metric("Data Punten", len(df))
-        st.caption("Metingen verzameld")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    with col3:
-        st.markdown('<div class="status-card">', unsafe_allow_html=True)
-        st.metric("Gem. Belasting", f"{float(np.mean([df[f'current_{i}'].mean() for i in range(1, NUM_MACHINES+1)])):.1f}A")
-        st.caption("Stroomverbruik")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    with col4:
-        st.markdown('<div class="status-card">', unsafe_allow_html=True)
-        st.metric("Status", "Online")
-        st.caption("Systeem actief")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    # Feature showcase
-    st.subheader("☰ Platform Mogelijkheden")
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.markdown('<div class="feature-card">', unsafe_allow_html=True)
-        st.markdown("### Live Dashboard")
-        st.markdown("Real-time monitoring van machine prestaties met interactieve grafieken en trends.")
-        st.markdown("**Gebruik:** Bekijk huidige status en historische data")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    with col2:
-        st.markdown('<div class="feature-card">', unsafe_allow_html=True)
-        st.markdown("### Fabrieks Analyse")
-        st.markdown("Diepe analyse per machine met gedetailleerde prestaties en vergelijkingen.")
-        st.markdown("**Gebruik:** Identificeer problemen en optimaliseer productie")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    with col3:
-        st.markdown('<div class="feature-card">', unsafe_allow_html=True)
-        st.markdown("### AI Inzichten")
-        st.markdown("Intelligente analyses met anomalie detectie en geautomatiseerde aanbevelingen.")
-        st.markdown("**Gebruik:** Voorspel onderhoud en verbeter efficiency")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    # Quick actions
-    st.subheader("☰ Snelle Acties")
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        if st.button("⌗ Naar Dashboard", width="stretch"):
+    st.subheader(t("Quick Demo", "Snelle Demo"))
+    quick1, quick2, quick3 = st.columns(3)
+    with quick1:
+        if st.button(t("Open Demo", "Open Demo"), width="stretch"):
             st.session_state.page = "Dashboard"
             st.rerun()
-
-    with col2:
-        if st.button("⚒ Machine Overzicht", width="stretch"):
-            st.session_state.page = "Factory Analysis"
+    with quick2:
+        if st.button(t("Connect Device", "Verbind apparaat"), width="stretch"):
+            st.session_state.page = "Device Connection"
+            st.session_state.pending_mode = "Live"
             st.rerun()
-
-    with col3:
-        if st.button("⌬ AI Inzichten", width="stretch"):
+    with quick3:
+        if st.button(t("⌬ Ask AI", "⌬ Vraag AI"), width="stretch", type="secondary"):
             st.session_state.page = "AI Insights"
+            st.session_state.ai_assistant_open = True
             st.rerun()
+
+    demo_col1, demo_col2 = st.columns(2)
+    with demo_col1:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.metric(t("Active Machines", "Actieve Machines"), NUM_MACHINES)
+        st.metric(t("Data Points", "Data Punten"), len(df))
+        st.markdown('</div>', unsafe_allow_html=True)
+    with demo_col2:
+        avg_demo = float(np.mean([df[f"current_{i}"].mean() for i in range(1, NUM_MACHINES + 1)])) if NUM_MACHINES > 0 else 0.0
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.metric(t("Avg Load", "Gem. Belasting"), f"{avg_demo:.1f}A")
+        st.caption(t("Start with Dashboard for live status, then use AI Insights for recommendations.", "Start met Dashboard voor live status en gebruik daarna AI Insights voor aanbevelingen."))
+        st.markdown('</div>', unsafe_allow_html=True)
 
     # Footer info
     st.markdown("---")
-    st.markdown("""
-    <div style='text-align: center; color: #94a3b8; font-size: 0.9rem;'>
-    <strong>Tip:</strong> Gebruik de bovenste navigatiebalk voor snelle navigatie en instellingen<br>
-    Data wordt automatisch elke 2 seconden bijgewerkt
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(t(
+        """<div style='text-align: center; color: #94a3b8; font-size: 0.9rem;'>
+<strong>Tip:</strong> Use the top navigation bar for quick navigation and settings<br>
+Data is automatically updated every 2 seconds
+</div>
+""",
+        """<div style='text-align: center; color: #94a3b8; font-size: 0.9rem;'>
+<strong>Tip:</strong> Gebruik de bovenste navigatiebalk voor snelle navigatie en instellingen<br>
+Data wordt automatisch elke 2 seconden bijgewerkt
+</div>
+"""
+    ), unsafe_allow_html=True)
 
     st.divider()
 
@@ -3168,7 +4767,21 @@ elif page == "Dashboard":
         for machine_index in range(1, NUM_MACHINES + 1):
             column_name = f"current_{machine_index}"
             if column_name in dashboard_df.columns and not dashboard_df[column_name].dropna().empty:
-                current_snapshot[column_name] = float(dashboard_df[column_name].iloc[-1])
+                series_num = pd.to_numeric(dashboard_df[column_name], errors="coerce").dropna()
+                if not series_num.empty:
+                    current_snapshot[column_name] = float(series_num.iloc[-1])
+
+    if current_snapshot:
+        st.session_state['dashboard_snapshot_snapshot'] = current_snapshot.copy()
+    else:
+        current_snapshot = dict(st.session_state.get('dashboard_snapshot_snapshot') or {})
+
+    if not current_snapshot:
+        last_values = dict(st.session_state.get("last_current_values", {}))
+        for machine_index in range(1, NUM_MACHINES + 1):
+            key = f"current_{machine_index}"
+            if key in last_values:
+                current_snapshot[key] = float(last_values.get(key, 0.0) or 0.0)
 
     active_machine_count = len(current_snapshot)
     machine_name_lookup = {
@@ -3177,6 +4790,7 @@ elif page == "Dashboard":
         else f"M{index}"
         for index in range(1, NUM_MACHINES + 1)
     }
+    ordered_visible_machine_indices = get_ordered_visible_machine_indices(NUM_MACHINES)
     avg_current = float(np.mean(list(current_snapshot.values()))) if current_snapshot else 0.0
     peak_current = float(np.max(list(current_snapshot.values()))) if current_snapshot else 0.0
     live_voltage = st.session_state.get('last_voltage', None)
@@ -3198,16 +4812,16 @@ elif page == "Dashboard":
 
     st.markdown(
         f"""
-        <div style="background:linear-gradient(135deg,#111827 0%,#0f172a 100%); border:1px solid #1f2937; border-left:6px solid {status_color}; border-radius:18px; padding:18px 20px; margin:8px 0 16px 0;">
+        <div style="background:{theme_tokens['hero_gradient']}; border:1px solid {theme_tokens['border']}; border-left:6px solid {status_color}; border-radius:18px; padding:18px 20px; margin:8px 0 16px 0; box-shadow:0 14px 28px {theme_tokens['accent_glow']};">
             <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap;">
                 <div>
-                    <div style="font-size:0.82rem; color:#94a3b8; text-transform:uppercase; letter-spacing:0.08em;">{t('Quick status', 'Snelle status')}</div>
-                    <div style="font-size:1.35rem; font-weight:800; color:#f8fafc; margin-top:4px;">{overview_status}</div>
-                    <div style="font-size:0.95rem; color:#cbd5e1; margin-top:6px;">{overview_detail}</div>
+                    <div style="font-size:0.82rem; color:{theme_tokens['subtle']}; text-transform:uppercase; letter-spacing:0.08em;">{t('Quick status', 'Snelle status')}</div>
+                    <div style="font-size:1.35rem; font-weight:800; color:{theme_tokens['text']}; margin-top:4px;">{overview_status}</div>
+                    <div style="font-size:0.95rem; color:{theme_tokens['muted']}; margin-top:6px;">{overview_detail}</div>
                 </div>
-                <div style="font-size:0.82rem; color:#94a3b8; text-align:right; min-width:180px;">
-                    <div>{t('Source', 'Bron')}: <span style="color:#f8fafc; font-weight:700;">{device_status}</span></div>
-                    <div style="margin-top:4px;">{t('Endpoint', 'Endpoint')}: <span style="color:#e2e8f0;">{endpoint_info}</span></div>
+                <div style="font-size:0.82rem; color:{theme_tokens['subtle']}; text-align:right; min-width:180px;">
+                    <div>{t('Source', 'Bron')}: <span style="color:{theme_tokens['text']}; font-weight:700;">{device_status}</span></div>
+                    <div style="margin-top:4px;">{t('Endpoint', 'Endpoint')}: <span style="color:{theme_tokens['muted']};">{endpoint_info}</span></div>
                 </div>
             </div>
         </div>
@@ -3215,6 +4829,7 @@ elif page == "Dashboard":
         unsafe_allow_html=True,
     )
 
+    st.markdown('<div class="page-section">', unsafe_allow_html=True)
     stat1, stat2, stat3, stat4, stat5 = st.columns(5)
     with stat1:
         st.metric(t("⦿ Source", "⦿ Bron"), device_status)
@@ -3248,6 +4863,7 @@ elif page == "Dashboard":
         st.caption(f"{t('Connected', 'Verbonden')}: {device_names}")
     else:
         st.caption(t("No devices connected", "Geen apparaten verbonden"))
+    st.markdown('</div>', unsafe_allow_html=True)
 
     total_anomalies = len(st.session_state.get('anomalies', []))
     total_bottlenecks = len(st.session_state.get('bottlenecks', []))
@@ -3281,32 +4897,48 @@ elif page == "Dashboard":
     else:
         trend_label = t("Stable", "Stabiel")
 
+    st.markdown('<div class="page-section">', unsafe_allow_html=True)
     st.subheader(t("⌁ Control Overview", "⌁ Controle Overzicht"))
     overview_col1, overview_col2 = st.columns([1.4, 1])
 
     with overview_col1:
-        machine_labels = [machine_name_lookup[key] for key in current_snapshot.keys()]
-        machine_values = [current_snapshot[key] for key in current_snapshot.keys()]
-        if machine_labels:
-            fig_snapshot = go.Figure()
-            fig_snapshot.add_trace(go.Bar(
-                x=machine_labels,
-                y=machine_values,
-                marker=dict(color=['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899', '#84cc16', '#a78bfa'][:len(machine_labels)]),
-                text=[f"{value:.2f}A" for value in machine_values],
-                textposition='outside',
-            ))
-            fig_snapshot.update_layout(
-                title=t("Machine Snapshot", "Machine Snapshot"),
-                template='plotly_dark',
-                height=280,
-                margin=dict(l=20, r=20, t=42, b=20),
-                plot_bgcolor='#0f172a',
-                paper_bgcolor='#0f172a',
-                yaxis=dict(title=t("Current (A)", "Stroom (A)"), range=[0, 8]),
-                xaxis=dict(title=t("Machines", "Machines")),
+        machine_labels = []
+        machine_values = []
+        for machine_idx in ordered_visible_machine_indices:
+            key = f"current_{machine_idx}"
+            if key in current_snapshot:
+                machine_labels.append(machine_name_lookup.get(key, f"Machine {machine_idx}"))
+                machine_values.append(current_snapshot[key])
+
+        if not machine_labels and current_snapshot:
+            for key in sorted(current_snapshot.keys()):
+                machine_labels.append(machine_name_lookup.get(key, key))
+                machine_values.append(float(current_snapshot.get(key, 0.0) or 0.0))
+
+        show_snapshot = bool(st.session_state.get("dashboard_show_snapshot_chart", True))
+        if not show_snapshot:
+            st.info(t("Machine Snapshot is hidden in settings.", "Machine Snapshot is verborgen in instellingen."))
+            if st.button(t("Show Machine Snapshot", "Toon Machine Snapshot"), key="dashboard_enable_snapshot", type="secondary"):
+                st.session_state.dashboard_show_snapshot_chart = True
+                st.rerun()
+        elif machine_labels:
+            render_client_snapshot_panel(
+                snapshot_items=[
+                    {"label": label, "value": value}
+                    for label, value in zip(machine_labels, machine_values)
+                ],
+                panel_title=t("Machine Snapshot", "Machine Snapshot"),
             )
-            st.plotly_chart(fig_snapshot, width="stretch", config={'displayModeBar': False, 'displaylogo': False})
+            last_ts = None
+            if isinstance(dashboard_df, pd.DataFrame) and not dashboard_df.empty and "timestamp" in dashboard_df.columns:
+                try:
+                    last_ts = pd.to_datetime(dashboard_df["timestamp"].iloc[-1], errors="coerce")
+                except Exception:
+                    last_ts = None
+            if last_ts is not None and not pd.isna(last_ts):
+                st.caption(t(f"Snapshot updated: {last_ts.strftime('%H:%M:%S')}", f"Snapshot bijgewerkt: {last_ts.strftime('%H:%M:%S')}"))
+        else:
+            st.warning(t("No snapshot data available yet.", "Nog geen snapshotdata beschikbaar."))
 
     with overview_col2:
         ai1, ai2 = st.columns(2)
@@ -3326,33 +4958,45 @@ elif page == "Dashboard":
             t('Bottleneck', 'Knelpunt'): len([event for event in event_history if event.get('type') == 'Bottleneck']),
             t('Connection', 'Verbinding'): len([event for event in event_history if event.get('type') == 'Connection']),
         }
-        fig_events = go.Figure()
-        fig_events.add_trace(go.Bar(
-            x=list(event_counts.keys()),
-            y=list(event_counts.values()),
-            marker_color=['#ef4444', '#f97316', '#10b981'],
-        ))
-        fig_events.update_layout(
-            title=t("History Overview", "Geschiedenis Overzicht"),
-            template='plotly_dark',
-            height=220,
-            margin=dict(l=20, r=20, t=42, b=20),
-            plot_bgcolor='#0f172a',
-            paper_bgcolor='#0f172a',
-            yaxis=dict(title=t("Count", "Aantal"), rangemode='tozero', dtick=1),
-        )
-        st.plotly_chart(fig_events, width="stretch", config={'displayModeBar': False, 'displaylogo': False})
+        if bool(st.session_state.get("dashboard_show_history_chart", True)):
+            fig_events = go.Figure()
+            fig_events.add_trace(go.Bar(
+                x=list(event_counts.keys()),
+                y=list(event_counts.values()),
+                marker_color=['#ef4444', '#f97316', "#10b91e"],
+            ))
+            fig_events.update_layout(
+                title=t("History Overview", "Geschiedenis Overzicht"),
+                template=plotly_template,
+                height=220,
+                margin=dict(l=20, r=20, t=42, b=20),
+                plot_bgcolor=plot_bg_color,
+                paper_bgcolor=plot_bg_color,
+                font=dict(color=plot_text_color),
+                yaxis=dict(title=t("Count", "Aantal"), rangemode='tozero', dtick=1),
+            )
+            st.plotly_chart(fig_events, width="stretch", config={'displayModeBar': False, 'displaylogo': False})
 
         latest_event = event_history[0] if event_history else None
         if latest_event:
             st.caption(f"{t('Latest event', 'Laatste gebeurtenis')}: {latest_event.get('type', '-') } | {latest_event.get('timestamp', '')}")
             st.markdown(f"**{latest_event.get('message', '')}**")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    render_client_realtime_panel(
-        machine_names=st.session_state.machine_names[:NUM_MACHINES],
-        panel_title=t("⌁ Machine Status — Live", "⌁ Machine Status — Live"),
-        show_metrics=True,
-    )
+    if bool(st.session_state.get("dashboard_show_realtime_panel", True)):
+        st.markdown('<div class="page-section">', unsafe_allow_html=True)
+        machine_names_for_panel = [
+            st.session_state.machine_names[idx - 1]
+            for idx in ordered_visible_machine_indices
+            if 0 < idx <= len(st.session_state.machine_names)
+        ]
+        if machine_names_for_panel:
+            render_client_realtime_panel(
+                machine_names=machine_names_for_panel,
+                panel_title=t("⌁ Machine Status — Live", "⌁ Machine Status — Live"),
+                show_metrics=True,
+            )
+        st.markdown('</div>', unsafe_allow_html=True)
 
 elif page == "Factory Analysis":
     st.title(t("⚒ Machine Overview", "⚒ Machine Overzicht"))
@@ -3370,7 +5014,7 @@ elif page == "Factory Analysis":
     )
 
     st.markdown('<div class="page-section">', unsafe_allow_html=True)
-    st.subheader("Select Machines to Analyze")
+    st.subheader(t("Select Machines to Analyze", "Selecteer Machines te Analyseren"))
     st.markdown(t(
         "**What you can do here:** Choose which machines you want to look at in detail. You can compare 1 or multiple machines side-by-side to spot patterns and differences.",
         "**Wat je hier kunt doen:** Kies welke machines je in detail wilt analyseren. Vergelijk 1 of meer machines naast elkaar om patronen te zien."
@@ -3401,17 +5045,18 @@ elif page == "Device Connection":
     connected_ip = ', '.join([device.get('ip', '') for device in connected_devices[:3]])
 
     if (st.session_state.get('pending_mode') == 'Live' or connection_prompt_required) and not already_connected:
-        st.warning(
+        st.warning(t(
+            "The ESP32 is not yet connected to the site. Connect a device first; then the dashboard opens with the live ampere values.",
             "De ESP32 is nog niet met de site verbonden. Verbind eerst een apparaat; daarna opent het dashboard met de live amperewaarden."
-        )
+        ))
 
     # ── Header ──────────────────────────────────────────────────────────────
     _, mid, _ = st.columns([1, 2, 1])
     with mid:
-        st.markdown("""
+        st.markdown(f"""
         <div class="connect-wrap">
-            <p class="connect-title">Apparaten</p>
-            <p class="connect-sub">Verbind een ESP32 via Bluetooth</p>
+            <p class="connect-title">{t('Devices', 'Apparaten')}</p>
+            <p class="connect-sub">{t('Connect an ESP32 via Bluetooth', 'Verbind een ESP32 via Bluetooth')}</p>
         </div>
         """, unsafe_allow_html=True)
 
@@ -3426,27 +5071,27 @@ elif page == "Device Connection":
     _, mid, _ = st.columns([1, 2, 1])
     with mid:
         if already_connected:
-            st.markdown("""
+            st.markdown(f"""
             <div class="connect-status">
                 <div class="connect-status-icon">Connected</div>
-                <p class="connect-status-label" style="color:#86efac;">{count} apparaat/apparaten verbonden</p>
-                <p class="connect-status-meta">{ip}</p>
+                <p class="connect-status-label" style="color:#86efac;">{len(connected_devices)} {t('device/devices connected', 'apparaat/apparaten verbonden')}</p>
+                <p class="connect-status-meta">{connected_ip}</p>
             </div>
-            """.format(ip=connected_ip, count=len(connected_devices)), unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
         else:
-            st.markdown("""
+            st.markdown(f"""
             <div class="connect-status">
                 <div class="connect-status-icon">Ready</div>
-                <p class="connect-status-label" style="color:#e2e8f0;">Nog geen apparaat verbonden</p>
-                <p class="connect-status-meta">Scan eerst via Bluetooth of verbind handmatig via IP.</p>
+                <p class="connect-status-label" style="color:#e2e8f0;">{t('No device connected yet', 'Nog geen apparaat verbonden')}</p>
+                <p class="connect-status-meta">{t('Scan first via Bluetooth or connect manually via IP.', 'Scan eerst via Bluetooth of verbind handmatig via IP.')}</p>
             </div>
             """, unsafe_allow_html=True)
 
-    # ── Verbonden apparaten met verbreek-knop ────────────────────────────────
+    # ── Connected devices with disconnect button ────────────────────────────
     if connected_devices:
         _, mid, _ = st.columns([1, 2, 1])
         with mid:
-            st.markdown("<p class='connect-section-label'>Verbonden apparaten</p>", unsafe_allow_html=True)
+            st.markdown(f"<p class='connect-section-label'>{t('Connected devices', 'Verbonden apparaten')}</p>", unsafe_allow_html=True)
             for device in connected_devices:
                 dev_ip = device.get("ip", "")
                 dev_name = device.get("name", f"ESP32 {dev_ip.split('.')[-1]}")
@@ -3459,36 +5104,36 @@ elif page == "Device Connection":
                             <p class="device-name">{dev_name}</p>
                             <p class="device-ip">{dev_ip}</p>
                         </div>
-                        <span class="device-connected-badge">Verbonden</span>
+                        <span class="device-connected-badge">{t('Connected', 'Verbonden')}</span>
                     </div>
                     """, unsafe_allow_html=True)
                 with col_btn:
-                    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-                    if st.button("Verbreek", key=f"disc_{dev_ip}", width="stretch", type="secondary"):
+                    st.markdown(f"<div style='height:8px'></div>", unsafe_allow_html=True)
+                    if st.button(t("Disconnect", "Verbreek"), key=f"disc_{dev_ip}", width="stretch", type="secondary"):
                         disconnect_device(dev_ip)
                         st.rerun()
             st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
     _, mid, _ = st.columns([1, 2, 1])
     with mid:
-        # ── Al verbonden → naar dashboard ────────────────────────────────────
+        # ── Already connected → go to dashboard ────────────────────────────────────
         if already_connected:
-            if st.button("Ga naar Dashboard →", width="stretch", type="primary"):
+            if st.button(t("Go to Dashboard →", "Ga naar Dashboard →"), width="stretch", type="primary"):
                 st.session_state.page = "Dashboard"
                 st.session_state.mode = 'Live'
                 st.session_state.pending_mode = None
                 st.rerun()
             st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 
-        # ── BLE Provisioning – nieuwe ESP32 instellen ────────────────────────
+        # ── BLE Provisioning – set up new ESP32 ────────────────────────
         st.markdown(
-            "<p class='connect-section-label'>"
-            "Nieuwe ESP32 instellen via Bluetooth</p>",
+            f"<p class='connect-section-label'>"
+            f"{t('Set up new ESP32 via Bluetooth', 'Nieuwe ESP32 instellen via Bluetooth')}</p>",
             unsafe_allow_html=True
         )
 
-        if st.button("Zoek nieuwe ESP32 via Bluetooth", width="stretch", type="primary"):
-            with st.spinner("Bluetooth scannen… (6 seconden)"):
+        if st.button(t("Search for new ESP32 via Bluetooth", "Zoek nieuwe ESP32 via Bluetooth"), width="stretch", type="primary"):
+            with st.spinner(t("Scanning Bluetooth… (6 seconds)", "Bluetooth scannen… (6 seconden)")):
                 found = ble_scan_for_provisioning(timeout=6.0)
             if found:
                 # Haal WiFi-gegevens alvast op zodat we ze niet hoeven in te vullen
@@ -3499,38 +5144,66 @@ elif page == "Device Connection":
                 ]
             else:
                 st.session_state.ble_prov_devices = []
-                st.info(
-                    "Geen nieuwe ESP32 gevonden via Bluetooth. "
-                    "Zorg dat de ESP32 voor het eerst opgestart is (blauwe LED knippert)."
-                )
+                st.info(t(
+                    "No new ESP32 found via Bluetooth. Make sure the ESP32 is started for the first time (blue LED flashing).",
+                    "Geen nieuwe ESP32 gevonden via Bluetooth. Zorg dat de ESP32 voor het eerst opgestart is (blauwe LED knippert)."
+                ))
 
         ble_devices = st.session_state.get("ble_prov_devices", [])
         for ble_dev in ble_devices:
             auto_ssid = ble_dev.get("auto_ssid", "")
-            st.success("Nieuwe ESP32 gevonden. Vul je WiFi-gegevens in:")
-            with st.form(f"prov_form_{ble_dev['address'].replace(':', '_')}"):
-                prov_ssid = st.text_input("WiFi naam (SSID)", value=auto_ssid, placeholder="JouwWiFiNaam")
-                prov_pass = st.text_input("WiFi wachtwoord", type="password", placeholder="Wachtwoord")
-                submitted = st.form_submit_button(
-                    "Akkoord - WiFi instellen", width="stretch", type="primary"
-                )
+            auto_pass = ble_dev.get("auto_pass", "")
+            form_key = ble_dev['address'].replace(':', '_')
+
+            if auto_ssid:
+                st.success(t("New ESP32 found!", "Nieuwe ESP32 gevonden!"))
+                st.markdown(t(
+                    f"📶 Your laptop is connected to **{auto_ssid}**. Do you want the ESP32 to also connect to this network?",
+                    f"📶 Je laptop is verbonden met **{auto_ssid}**. Wil je dat de ESP32 ook op dit netwerk aansluit?"
+                ))
+                if auto_pass:
+                    # Password found in keychain – customer doesn't need to do anything
+                    with st.form(f"prov_form_{form_key}"):
+                        submitted = st.form_submit_button(
+                            f"✅ {t('Yes, use', 'Ja, gebruik')} {auto_ssid}", width="stretch", type="primary"
+                        )
+                        prov_ssid = auto_ssid
+                        prov_pass = auto_pass
+                else:
+                    # SSID known, password still needed
+                    with st.form(f"prov_form_{form_key}"):
+                        st.text_input(t("WiFi network", "WiFi netwerk"), value=auto_ssid, disabled=True)
+                        prov_pass = st.text_input(t("WiFi password", "WiFi wachtwoord"), type="password", placeholder=t("Password", "Wachtwoord"))
+                        submitted = st.form_submit_button(
+                            t("OK - Set WiFi", "Akkoord - WiFi instellen"), width="stretch", type="primary"
+                        )
+                        prov_ssid = auto_ssid
+            else:
+                # No network automatically detectable – fill in manually
+                st.success(t("New ESP32 found. Enter your WiFi details:", "Nieuwe ESP32 gevonden. Vul je WiFi-gegevens in:"))
+                with st.form(f"prov_form_{form_key}"):
+                    prov_ssid = st.text_input(t("WiFi name (SSID)", "WiFi naam (SSID)"), placeholder=t("YourWiFiName", "JouwWiFiNaam"))
+                    prov_pass = st.text_input(t("WiFi password", "WiFi wachtwoord"), type="password", placeholder=t("Password", "Wachtwoord"))
+                    submitted = st.form_submit_button(
+                        t("OK - Set WiFi", "Akkoord - WiFi instellen"), width="stretch", type="primary"
+                    )
                 if submitted:
                     if not prov_ssid or not prov_pass:
-                        st.error("Vul WiFi naam en wachtwoord in.")
+                        st.error(t("Enter WiFi name and password.", "Vul WiFi naam en wachtwoord in."))
                     else:
-                        with st.spinner("ESP32 verbindt met WiFi… (kan 30 seconden duren)"):
+                        with st.spinner(t("ESP32 connecting to WiFi… (can take 30 seconds)", "ESP32 verbindt met WiFi… (kan 30 seconden duren)")):
                             try:
                                 ip = ble_provision_esp32(
                                     ble_dev["address"], prov_ssid, prov_pass, timeout=35.0
                                 )
                                 st.session_state.ble_prov_devices = []
                             except Exception as exc:
-                                st.error(f"Provisioning mislukt: {exc}")
+                                st.error(t(f"Provisioning failed: {exc}", f"Provisioning mislukt: {exc}"))
                                 ip = None
 
                         if ip:
-                            # ESP32 herstart na provisioning – wacht tot webserver bereikbaar is
-                            with st.spinner(f"Wachten tot ESP32 ({ip}) opstart…"):
+                            # ESP32 restarts after provisioning – wait until webserver is reachable
+                            with st.spinner(t(f"Waiting for ESP32 ({ip}) to start…", f"Wachten tot ESP32 ({ip}) opstart…")):
                                 endpoint = None
                                 try:
                                     endpoint, payload, normalized = wait_for_device_endpoint(
@@ -3547,20 +5220,22 @@ elif page == "Device Connection":
                                 activate_live_device_connection(ip, 80, timeout=4)
                                 st.rerun()
                             else:
-                                st.error(
+                                st.error(t(
+                                    f"ESP32 ({ip}) is connected to WiFi but the web server is not responding. "
+                                    "Try connecting manually via the 'Already set up?' menu below.",
                                     f"ESP32 ({ip}) is verbonden met WiFi maar de webserver reageert niet. "
                                     "Probeer handmatig te verbinden via het 'Al eerder ingesteld?' menu hieronder."
-                                )
+                                ))
 
-        # ── Handmatig IP (nooduitgang voor al-geprovisioneerde ESP32s) ────────
+        # ── Manual IP (emergency for already-provisioned ESP32s) ────────
         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-        with st.expander("Al eerder ingesteld? Verbind via IP"):
+        with st.expander(t("Already set up? Connect via IP", "Al eerder ingesteld? Verbind via IP")):
             default_ip   = st.session_state.get('device_ip', '192.168.1.100')
             default_port = int(st.session_state.get('device_port', 80))
-            device_ip    = st.text_input("IP-adres", value=default_ip, placeholder="192.168.1.100")
-            device_port  = st.number_input("Poort", value=default_port, min_value=1, max_value=65535)
-            if st.button("Verbinden", key="manual_connect", type="primary", width="stretch"):
-                with st.spinner(f"Verbinden met {device_ip}…"):
+            device_ip    = st.text_input(t("IP address", "IP-adres"), value=default_ip, placeholder="192.168.1.100")
+            device_port  = st.number_input(t("Port", "Poort"), value=default_port, min_value=1, max_value=65535)
+            if st.button(t("Connect", "Verbinden"), key="manual_connect", type="primary", width="stretch"):
+                with st.spinner(t(f"Connecting to {device_ip}…", f"Verbinden met {device_ip}…")):
                     try:
                         endpoint, payload, normalized = activate_live_device_connection(
                             device_ip, int(device_port),
@@ -3568,7 +5243,7 @@ elif page == "Device Connection":
                         )
                         st.rerun()
                     except Exception as exc:
-                        st.error(f"Verbinden mislukt: {exc}")
+                        st.error(t(f"Connection failed: {exc}", f"Verbinden mislukt: {exc}"))
 
         st.markdown("""
         <div class="connect-feature-grid">
@@ -3601,13 +5276,20 @@ elif page == "Platform":
     platform_auth_suffix = f"&auth={platform_auth_token}" if platform_auth_token else ""
     st.markdown(
         f"""
-        <div style="background:linear-gradient(120deg,#0b1220 0%,#1e293b 60%,#0f766e 130%); border:1px solid #334155; border-radius:22px; padding:28px; margin:6px 0 18px 0;">
-            <div style="font-size:0.85rem; letter-spacing:0.08em; text-transform:uppercase; color:#93c5fd; font-weight:700;">Smart Factory Suite</div>
-            <div style="font-size:2rem; line-height:1.2; font-weight:800; color:#f8fafc; margin-top:8px;">
+        <div style="background:{theme_tokens['hero_gradient_alt']}; border:1px solid {theme_tokens['border']}; border-radius:22px; padding:28px; margin:6px 0 18px 0; box-shadow:0 14px 28px {theme_tokens['accent_glow']};">
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">
+                {hero_logo_markup}
+                <div style="display:flex; flex-direction:column; line-height:1.1;">
+                    <span style="font-size:0.76rem; text-transform:uppercase; letter-spacing:0.08em; color:{theme_tokens['accent']}; font-weight:700;">{t('Smart Factory', 'Smart Factory')}</span>
+                    <span style="font-size:0.96rem; color:{theme_tokens['muted']}; font-weight:600;">{t('Monitoring Platform', 'Monitoring Platform')}</span>
+                </div>
+            </div>
+            <div style="font-size:0.85rem; letter-spacing:0.08em; text-transform:uppercase; color:{theme_tokens['accent']}; font-weight:700;">Smart Factory Suite</div>
+            <div style="font-size:2rem; line-height:1.2; font-weight:800; color:{theme_tokens['text']}; margin-top:8px;">
                 {t('Real-time monitoring for modern production teams.', 'Realtime monitoring voor moderne productieteams.')}
             </div>
-            <div style="font-size:1rem; color:#cbd5e1; max-width:880px; margin-top:12px;">
-                {t('Follow machine behavior live, prevent downtime early, and turn raw telemetry into practical production decisions.', 'Volg machinegedrag live, voorkom downtime vroegtijdig en vertaal ruwe telemetrie naar praktische productie-beslissingen.')}
+            <div style="font-size:1rem; color:{theme_tokens['muted']}; max-width:880px; margin-top:12px;">
+                {t('Follow machine behavior live, prevent downtime, and turn raw telemetry into practical production decisions.', 'Volg machinegedrag live, voorkom downtime en vertaal ruwe telemetrie naar praktische productie-beslissingen.')}
             </div>
         </div>
         """,
@@ -3616,25 +5298,14 @@ elif page == "Platform":
 
     cta1, cta2 = st.columns(2)
     with cta1:
-        st.markdown(
-            f"""
-            <a href="?page=Dashboard{platform_auth_suffix}" target="_self"
-               style="display:block; text-align:center; text-decoration:none; background:#3b82f6; color:#ffffff; padding:12px 14px; border-radius:10px; font-weight:700; border:1px solid #2563eb;">
-               {t('Open Live Demo', 'Open Live Demo')}
-            </a>
-            """,
-            unsafe_allow_html=True,
-        )
+        if st.button(t("Open Demo", "Open Demo"), key="platform_open_demo", width="stretch"):
+            st.session_state.page = "Dashboard"
+            st.rerun()
     with cta2:
-        st.markdown(
-            f"""
-            <a href="?shortcut=action=open_device_connection{platform_auth_suffix}" target="_self"
-               style="display:block; text-align:center; text-decoration:none; background:#1e293b; color:#f8fafc; padding:12px 14px; border-radius:10px; font-weight:700; border:1px solid #334155;">
-               {t('Connect Device', 'Verbind apparaat')}
-            </a>
-            """,
-            unsafe_allow_html=True,
-        )
+        if st.button(t("Connect Device", "Verbind apparaat"), key="platform_connect_device", width="stretch"):
+            st.session_state.page = "Device Connection"
+            st.session_state.pending_mode = "Live"
+            st.rerun()
 
     st.subheader(t("Features", "Features"))
     feat1, feat2, feat3 = st.columns(3)
@@ -3654,6 +5325,9 @@ elif page == "Platform":
             "Krijg vroege waarschuwingen wanneer machinegedrag afwijkt van normaal."
         ))
         st.markdown('</div>', unsafe_allow_html=True)
+
+    st.subheader(t("What makes this platform smart", "Wat dit platform slim maakt"))
+    render_capability_action_grid("platform_smart", scope="platform", show_buttons=False)
     with feat3:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown(f"### {t('Device Connectivity', 'Device Connectiviteit')}")
@@ -3698,25 +5372,25 @@ elif page == "Platform":
         ))
 
     fig_preview.update_layout(
-        template="plotly_dark",
+        template=plotly_template,
         height=340,
         margin=dict(l=22, r=20, t=22, b=28),
         yaxis=dict(
-            title=dict(text=t("Current (A)", "Stroom (A)"), font=dict(size=13, color="#f8fafc")),
+            title=dict(text=t("Current (A)", "Stroom (A)"), font=dict(size=13, color=plot_text_color)),
             range=[0, 8],
             dtick=1,
-            gridcolor="rgba(148,163,184,0.22)",
-            zerolinecolor="rgba(148,163,184,0.45)",
-            tickfont=dict(size=12, color="#dbeafe"),
+            gridcolor=plot_grid_color,
+            zerolinecolor=plot_line_color,
+            tickfont=dict(size=12, color=plot_tick_color),
         ),
         xaxis=dict(
-            title=dict(text=t("Time (sim)", "Tijd (sim)"), font=dict(size=13, color="#f8fafc")),
+            title=dict(text=t("Time (sim)", "Tijd (sim)"), font=dict(size=13, color=plot_text_color)),
             range=[0, sim_points - 1],
             tickmode='array',
             tickvals=preview_tickvals,
             showgrid=True,
-            gridcolor="rgba(148,163,184,0.12)",
-            tickfont=dict(size=12, color="#dbeafe"),
+            gridcolor=plot_grid_color,
+            tickfont=dict(size=12, color=plot_tick_color),
         ),
         legend=dict(
             orientation="h",
@@ -3724,13 +5398,13 @@ elif page == "Platform":
             y=1.04,
             xanchor="left",
             x=0,
-            font=dict(size=12, color="#e2e8f0"),
-            bgcolor="rgba(15,23,42,0.55)",
-            bordercolor="rgba(148,163,184,0.22)",
+            font=dict(size=12, color=plot_text_color),
+            bgcolor=plot_legend_bg,
+            bordercolor=plot_legend_border,
             borderwidth=1,
         ),
-        plot_bgcolor="#0f172a",
-        paper_bgcolor="#0f172a",
+        plot_bgcolor=plot_bg_color,
+        paper_bgcolor=plot_bg_color,
         hovermode="x unified",
     )
     st.plotly_chart(fig_preview, width="stretch", config={'displayModeBar': False, 'displaylogo': False})
@@ -3765,7 +5439,7 @@ elif page == "Platform":
         "- Enterprise: maatwerk uitrol en support"
     ))
 
-    st.subheader(t("Where to buy", "Waar product te halen"))
+    st.subheader(t("Where to buy", "Waar te koop"))
     st.markdown(t(
         "You can order the hardware kit and activation through our webshop or via an implementation partner.",
         "Je kunt de hardwarekit en activatie bestellen via onze webshop of via een implementatiepartner."
@@ -3778,16 +5452,20 @@ elif page == "Platform":
             width="stretch",
         )
     with buy2:
-        st.link_button(
-            t("Find a partner", "Zoek partner"),
-            "https://example.com/partners",
-            width="stretch",
+        st.markdown(
+            f"""
+            <a href="?page=Contact{platform_auth_suffix}" target="_self"
+               class="inline-btn inline-btn-secondary">
+               {t('Contact us', 'Neem contact op')}
+            </a>
+            """,
+            unsafe_allow_html=True,
         )
 
     st.markdown(
         f"""
         <a href="?page=Dashboard{platform_auth_suffix}" target="_self"
-           style="display:block; text-align:center; text-decoration:none; background:#14b8a6; color:#06202a; padding:12px 14px; border-radius:10px; font-weight:800; border:1px solid #2dd4bf; margin-top:10px;">
+           class="inline-btn inline-btn-neon" style="margin-top:10px;">
            {t('Start Monitoring Now', 'Start nu met monitoren')}
         </a>
         """,
@@ -3797,104 +5475,57 @@ elif page == "Platform":
 elif page == "About":
     render_platform_sidebar_nav()
     st.markdown(
-        """
-        <div style="background:linear-gradient(120deg,#0b1220 0%,#1e293b 60%,#134e4a 130%);border:1px solid #334155;border-radius:18px;padding:28px 32px;margin-bottom:22px;">
-            <div style="font-size:0.8rem;letter-spacing:0.1em;text-transform:uppercase;color:#34d399;font-weight:700;">Wie zijn wij</div>
-            <div style="font-size:2rem;font-weight:800;color:#f8fafc;margin-top:6px;line-height:1.25;">Over Smart Factory Suite</div>
-            <div style="font-size:1.05rem;color:#cbd5e1;max-width:820px;margin-top:10px;">Wij bouwen praktische monitoringoplossingen voor productieteams die betrouwbare machine-inzichten nodig hebben — live, eenvoudig en schaalbaar.</div>
+        f"""
+        <div style="background:{theme_tokens['hero_gradient_alt']};border:1px solid {theme_tokens['border']};border-radius:18px;padding:28px 32px;margin-bottom:22px;box-shadow:0 14px 28px {theme_tokens['accent_glow']};">
+            <div style="font-size:0.8rem;letter-spacing:0.1em;text-transform:uppercase;color:{theme_tokens['accent']};font-weight:700;">Over ons</div>
+            <div style="font-size:2rem;font-weight:800;color:{theme_tokens['text']};margin-top:6px;line-height:1.25;">Wie zijn wij?</div>
+            <div style="font-size:1.05rem;color:{theme_tokens['muted']};max-width:820px;margin-top:10px;">Wij helpen bedrijven slimmer en efficiënter werken door middel van data en technologie. Met onze oplossingen krijg je direct inzicht in je machines, processen en prestaties.</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    st.subheader(t("Our mission", "Onze missie"))
     st.markdown(t(
-        "Smart Factory Suite was built because existing monitoring tools are either too complex, too expensive, or too generic. "
-        "We focus on one thing: giving operators and production leads real-time visibility into their machines, with hardware they can set up themselves.",
-        "Smart Factory Suite is ontstaan omdat bestaande monitoringoplossingen te complex, te duur of te generiek zijn. "
-        "Wij focussen op één ding: operators en productieleiding realtime inzicht geven in hun machines, met hardware die ze zelf kunnen installeren."
+"""
+We help companies work smarter and more efficiently through data and technology. With our solutions, you gain direct insight into your machines, processes and performance, so you can make better and faster decisions.
+
+Our focus is on machine monitoring, smart dashboards and data analysis. This helps you recognize failures faster, reduce energy consumption and optimize your production.
+""",
+"""
+Wij helpen bedrijven slimmer en efficiënter werken door middel van data en technologie. Met onze oplossingen krijg je direct inzicht in je machines, processen en prestaties, zodat je betere en snellere beslissingen kunt maken.
+
+Onze focus ligt op machine monitoring, slimme dashboards en data-analyse. Hiermee kun je storingen sneller herkennen, energieverbruik verlagen en je productie optimaliseren.
+"""
     ))
 
-    st.subheader(t("Our approach", "Onze aanpak"))
-    ap1, ap2, ap3 = st.columns(3)
-    with ap1:
-        st.markdown(
-            "<div class='card'><b>📡 Device integratie</b><br><br>"
-            + t(
-                "ESP32-based sensors connect to your production line in minutes. No complex wiring. No specialist required.",
-                "ESP32-sensors koppel je binnen minuten aan je productielijn. Geen complexe bedrading. Geen specialist nodig."
-            )
-            + "</div>",
-            unsafe_allow_html=True
-        )
-    with ap2:
-        st.markdown(
-            "<div class='card'><b>📊 Live data & simulatie</b><br><br>"
-            + t(
-                "View live current data per machine, or explore with simulation mode to understand your production patterns before going live.",
-                "Bekijk live stroomdata per machine, of verken met simulatiemodus om je productiepatronen te begrijpen voordat je live gaat."
-            )
-            + "</div>",
-            unsafe_allow_html=True
-        )
-    with ap3:
-        st.markdown(
-            "<div class='card'><b>🤖 AI & afwijkingen</b><br><br>"
-            + t(
-                "Automatic anomaly detection alerts you when machines deviate from normal behavior — so you can act early instead of react late.",
-                "Automatische afwijkingsdetectie waarschuwt wanneer machines afwijken van normaal gedrag — zodat je vroeg handelt in plaats van laat reageert."
-            )
-            + "</div>",
-            unsafe_allow_html=True
-        )
-
-    st.subheader(t("Technology", "Technologie"))
+    st.subheader(t("Our philosophy", "Onze filosofie"))
     st.markdown(t(
-        "- **ESP32** microcontrollers for affordable, reliable edge sensing\n"
-        "- **Python / Streamlit** for fast, web-based dashboard delivery\n"
-        "- **Plotly** for interactive, real-time charts\n"
-        "- **Cloud Bridge** for optional remote access outside the local network\n"
-        "- **AI Insights** powered by statistical anomaly detection and pattern analysis",
-        "- **ESP32** microcontrollers voor betaalbare, betrouwbare edge-sensoriek\n"
-        "- **Python / Streamlit** voor snelle, webgebaseerde dashboardlevering\n"
-        "- **Plotly** voor interactieve, realtime grafieken\n"
-        "- **Cloud Bridge** voor optionele externe toegang buiten het lokale netwerk\n"
-        "- **AI Insights** aangedreven door statistische afwijkingsdetectie en patroonanalyse"
+"""
+We believe that technology doesn't have to be complicated. That's why we develop systems that are not only powerful, but also clear and easy to use.
+""",
+"""
+Wij geloven dat technologie niet ingewikkeld hoeft te zijn. Daarom ontwikkelen wij systemen die niet alleen krachtig zijn, maar ook overzichtelijk en makkelijk te gebruiken.
+"""
     ))
 
-    st.subheader(t("Core values", "Kernwaarden"))
-    v1, v2, v3, v4 = st.columns(4)
-    for col, (icon, label) in zip(
-        [v1, v2, v3, v4],
-        [
-            ("🔍", t("Transparency", "Transparantie")),
-            ("⚡", t("Speed", "Snelheid")),
-            ("🛠", t("Repairability", "Repareerbaarheid")),
-            ("📦", t("Simplicity", "Eenvoud")),
-        ],
-    ):
-        with col:
-            st.markdown(
-                f"<div style='text-align:center;padding:14px;background:#1e293b;border-radius:12px;border:1px solid #334155;'>"
-                f"<div style='font-size:1.7rem;'>{icon}</div>"
-                f"<div style='font-size:0.9rem;color:#f8fafc;font-weight:700;margin-top:6px;'>{label}</div>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
+    st.subheader(t("For your business", "Voor jouw bedrijf"))
+    st.markdown(t(
+"""
+Whether you're a small company or a growing organization, we provide a solution that grows with you. This way you get the most out of your data and your business.
+""",
+"""
+Of je nu een klein bedrijf bent of een groeiende organisatie, wij zorgen voor een oplossing die met je meegroeit. Zo haal je het maximale uit je data én je bedrijf.
+"""
+    ))
 
 
 elif page == "Contact":
     render_platform_sidebar_nav()
-    st.markdown(
-        """
-        <div style="background:linear-gradient(120deg,#0b1220 0%,#1e293b 60%,#1e3a5f 130%);border:1px solid #334155;border-radius:18px;padding:28px 32px;margin-bottom:22px;">
-            <div style="font-size:0.8rem;letter-spacing:0.1em;text-transform:uppercase;color:#93c5fd;font-weight:700;">Neem contact op</div>
-            <div style="font-size:2rem;font-weight:800;color:#f8fafc;margin-top:6px;line-height:1.25;">Contact</div>
-            <div style="font-size:1.05rem;color:#cbd5e1;max-width:820px;margin-top:10px;">Heb je vragen, wil je een demo plannen of hulp bij de installatie? We reageren normaal binnen één werkdag.</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown(f"""<div style='background:{theme_tokens['hero_gradient']};border:1px solid {theme_tokens['border']};border-radius:18px;padding:28px 32px;margin-bottom:22px;box-shadow:0 14px 28px {theme_tokens['accent_glow']};'>
+            <div style='font-size:0.8rem;letter-spacing:0.1em;text-transform:uppercase;color:{theme_tokens['accent']};font-weight:700;'>{t('Get in touch', 'Neem contact op')}</div>
+            <div style='font-size:2rem;font-weight:800;color:{theme_tokens['text']};margin-top:6px;line-height:1.25;'>Contact</div>
+            <div style='font-size:1.05rem;color:{theme_tokens['muted']};max-width:820px;margin-top:10px;'>{t('Have questions, want to schedule a demo or need installation help? We typically respond within one business day.', 'Heb je vragen, wil je een demo plannen of hulp bij de installatie? We reageren normaal binnen één werkdag.')}</div>
+        </div>""", unsafe_allow_html=True)
 
     cc1, cc2 = st.columns([3, 2])
     with cc1:
@@ -3931,6 +5562,16 @@ elif page == "Contact":
 
     with cc2:
         st.subheader(t("Direct contact", "Direct contact"))
+        st.link_button(
+            t("Email customer service", "Mail klantenservice"),
+            "mailto:support@smartfactorysuite.com",
+            width="stretch",
+        )
+        st.link_button(
+            t("Call customer service", "Bel klantenservice"),
+            "tel:+31201234567",
+            width="stretch",
+        )
         st.markdown(
             "<div class='card' style='margin-bottom:12px;'>"
             "<b>📧 Email</b><br>support@smartfactorysuite.com</div>",
@@ -3959,16 +5600,11 @@ elif page == "Contact":
 
 elif page == "FAQ":
     render_platform_sidebar_nav()
-    st.markdown(
-        """
-        <div style="background:linear-gradient(120deg,#0b1220 0%,#1e293b 60%,#3b1f5e 130%);border:1px solid #334155;border-radius:18px;padding:28px 32px;margin-bottom:22px;">
-            <div style="font-size:0.8rem;letter-spacing:0.1em;text-transform:uppercase;color:#c4b5fd;font-weight:700;">Veelgestelde vragen</div>
-            <div style="font-size:2rem;font-weight:800;color:#f8fafc;margin-top:6px;line-height:1.25;">FAQ</div>
-            <div style="font-size:1.05rem;color:#cbd5e1;max-width:820px;margin-top:10px;">Antwoorden op de meest gestelde vragen over setup, gebruik en abonnementen.</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown(f"""<div style="background:{theme_tokens['hero_gradient']};border:1px solid {theme_tokens['border']};border-radius:18px;padding:28px 32px;margin-bottom:22px;box-shadow:0 14px 28px {theme_tokens['accent_glow']};">
+            <div style="font-size:0.8rem;letter-spacing:0.1em;text-transform:uppercase;color:{theme_tokens['accent']};font-weight:700;">{t('Frequently asked questions', 'Veelgestelde vragen')}</div>
+            <div style="font-size:2rem;font-weight:800;color:{theme_tokens['text']};margin-top:6px;line-height:1.25;">FAQ</div>
+            <div style="font-size:1.05rem;color:{theme_tokens['muted']};max-width:820px;margin-top:10px;">{t('Answers to the most common questions about setup, usage and subscriptions.', 'Antwoorden op de meest gestelde vragen over setup, gebruik en abonnementen.')}</div>
+        </div>""", unsafe_allow_html=True)
 
     st.markdown(f"**{t('Getting started', 'Aan de slag')}**")
     with st.expander(t("How quickly can I start?", "Hoe snel kan ik starten?")):
@@ -4046,12 +5682,11 @@ elif page == "FAQ":
 
 elif page == "Support":
     render_platform_sidebar_nav()
-    st.markdown(
-        """
-        <div style="background:linear-gradient(120deg,#0b1220 0%,#1e293b 60%,#1c3a2e 130%);border:1px solid #334155;border-radius:18px;padding:28px 32px;margin-bottom:22px;">
-            <div style="font-size:0.8rem;letter-spacing:0.1em;text-transform:uppercase;color:#34d399;font-weight:700;">Hulp & ondersteuning</div>
-            <div style="font-size:2rem;font-weight:800;color:#f8fafc;margin-top:6px;line-height:1.25;">Support</div>
-            <div style="font-size:1.05rem;color:#cbd5e1;max-width:820px;margin-top:10px;">Alles wat je nodig hebt om snel op weg te zijn of een probleem op te lossen.</div>
+    st.markdown(f"""
+        <div style="background:{theme_tokens['hero_gradient_alt']};border:1px solid {theme_tokens['border']};border-radius:18px;padding:28px 32px;margin-bottom:22px;box-shadow:0 14px 28px {theme_tokens['accent_glow']};">
+            <div style="font-size:0.8rem;letter-spacing:0.1em;text-transform:uppercase;color:{theme_tokens['accent']};font-weight:700;">{t('Help & support', 'Hulp & ondersteuning')}</div>
+            <div style="font-size:2rem;font-weight:800;color:{theme_tokens['text']};margin-top:6px;line-height:1.25;">Support</div>
+            <div style="font-size:1.05rem;color:{theme_tokens['muted']};max-width:820px;margin-top:10px;">{t('Everything you need to get going quickly or fix a problem.', 'Alles wat je nodig hebt om snel op weg te zijn of een probleem op te lossen.')}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -4148,6 +5783,9 @@ elif page == "Account":
     anomalies_total = len(st.session_state.get("anomalies", []))
     bottlenecks_total = len(st.session_state.get("bottlenecks", []))
     acct_section = st.session_state.get("account_section", "profiel")
+    if is_guest and acct_section not in {"inloggen", "account_maken", "support"}:
+        acct_section = "inloggen"
+        st.session_state.account_section = "inloggen"
 
     # ── header banner ───────────────────────────────────────────────────
     # derive initials for avatar
@@ -4188,23 +5826,24 @@ elif page == "Account":
         unsafe_allow_html=True,
     )
 
-    if is_guest:
-        st.warning(t(
-            "You are using a guest account. Log in to save your settings.",
-            "Je gebruikt een gastaccount. Log in om je instellingen op te slaan."
-        ))
-
     # ── nav sections definition ──
-    _acct_sections = [
-        ("profiel",      "👤 " + t("Profile",       "Profiel")),
-        ("machines",     "🏭 " + t("My machines",   "Mijn machines")),
-        ("meldingen",    "🔔 " + t("Notifications", "Meldingen")),
-        ("overzicht",    "📊 " + t("Overview",      "Overzicht")),
-        ("instellingen", "⚙️ " + t("Settings",      "Instellingen")),
-        ("abonnement",   "💳 " + t("Subscription",  "Abonnement")),
-        ("support",      "🛠️ " + t("Support",       "Support")),
-        ("uitloggen",    "🚪 " + t("Logout",        "Uitloggen")),
-    ]
+    if is_guest:
+        _acct_sections = [
+            ("inloggen",      "🔐 " + t("Login", "Inloggen")),
+            ("account_maken", "🆕 " + t("Create account", "Account aanmaken")),
+            ("support",       "🛠️ " + t("Support", "Support")),
+        ]
+    else:
+        _acct_sections = [
+            ("profiel",      "👤 " + t("Profile",       "Profiel")),
+            ("machines",     "🏭 " + t("My machines",   "Mijn machines")),
+            ("meldingen",    "🔔 " + t("Notifications", "Meldingen")),
+            ("overzicht",    "📊 " + t("Overview",      "Overzicht")),
+            ("instellingen", "⚙️ " + t("Settings",      "Instellingen")),
+            ("abonnement",   "💳 " + t("Subscription",  "Abonnement")),
+            ("support",      "🛠️ " + t("Support",       "Support")),
+            ("uitloggen",    "🚪 " + t("Logout",        "Uitloggen")),
+        ]
 
     nav_col, content_col = st.columns([1, 3], gap="medium")
 
@@ -4222,8 +5861,46 @@ elif page == "Account":
     with content_col:
         st.markdown('<span class="acct-content-marker"></span>', unsafe_allow_html=True)
 
+        if acct_section == "inloggen":
+            st.subheader("🔐 " + t("Login", "Inloggen"))
+            login_user = st.text_input(t("Username", "Gebruikersnaam"), key="account_guest_login_user")
+            login_pass = st.text_input(t("Password", "Wachtwoord"), type="password", key="account_guest_login_pass")
+            if st.button(t("Login now", "Nu inloggen"), key="account_guest_login_btn", type="primary", width="stretch"):
+                if not login_user or not login_pass:
+                    st.error(t("Please enter both username and password.", "Voer gebruikersnaam en wachtwoord in."))
+                elif authenticate_user(login_user, login_pass):
+                    st.session_state.auth_user = login_user.strip().lower()
+                    st.session_state.auth_loaded_user = st.session_state.auth_user
+                    remember_token = set_user_remember_token(st.session_state.auth_user)
+                    if remember_token:
+                        st.query_params["auth"] = remember_token
+                    db = load_user_db()
+                    user_state = db.get("users", {}).get(st.session_state.auth_user, {}).get("state", {})
+                    apply_user_state(user_state)
+                    send_login_email(st.session_state.auth_user)
+                    st.success(t("Login successful.", "Inloggen gelukt."))
+                    st.rerun()
+                else:
+                    st.error(t("Invalid username or password.", "Onjuiste gebruikersnaam of wachtwoord."))
+
+        elif acct_section == "account_maken":
+            st.subheader("🆕 " + t("Create account", "Account aanmaken"))
+            reg_user = st.text_input(t("Username", "Gebruikersnaam"), key="account_guest_register_user")
+            reg_pass = st.text_input(t("Password (min 6 chars)", "Wachtwoord (min 6 tekens)"), type="password", key="account_guest_register_pass")
+            reg_name = st.text_input(t("Full name", "Volledige naam"), key="account_guest_register_name")
+            reg_email = st.text_input(t("Email", "E-mail"), key="account_guest_register_email")
+            reg_company = st.text_input(t("Company", "Bedrijf"), key="account_guest_register_company")
+            if st.button(t("Create account", "Account aanmaken"), key="account_guest_register_btn", type="primary", width="stretch"):
+                ok, message = register_user(reg_user, reg_pass, reg_name, reg_email, reg_company)
+                if ok:
+                    st.success(message)
+                    st.session_state.account_section = "inloggen"
+                    st.rerun()
+                else:
+                    st.error(message)
+
         # ─── 👤 Profiel ───────────────────────────────────────────────
-        if acct_section == "profiel":
+        elif acct_section == "profiel":
             account_profile_editing = bool(st.session_state.get("account_profile_editing", False))
             st.subheader("👤 " + t("Profile", "Profiel"))
             st.text_input(t("Name", "Naam"),
@@ -4240,11 +5917,8 @@ elif page == "Account":
             elif st.button(t("Save changes", "Wijzigingen opslaan"), key="account_save_details",
                            width="stretch", type="primary"):
                 st.session_state.account_profile_editing = False
-                if not is_guest:
-                    persist_active_user_state()
-                    st.toast(t("Profile saved.", "Profiel opgeslagen."), icon="✅")
-                else:
-                    st.toast(t("Log in to save permanently.", "Log in om permanent op te slaan."), icon="ℹ️")
+                persist_active_user_state()
+                st.toast(t("Profile saved.", "Profiel opgeslagen."), icon="✅")
                 st.rerun()
 
         # ─── 🏭 Mijn machines ─────────────────────────────────────────
@@ -4272,8 +5946,7 @@ elif page == "Account":
                          width="stretch", type="primary"):
                 edited_names = [st.session_state.get(f"machine_name_{i}", f"Machine {i+1}") for i in range(machines)]
                 st.session_state.machine_names = edited_names
-                if not is_guest:
-                    persist_active_user_state()
+                persist_active_user_state()
                 st.toast(t("Machine names saved.", "Machinenamen opgeslagen."), icon="✅")
 
         # ─── 🔔 Meldingen ─────────────────────────────────────────────
@@ -4296,8 +5969,7 @@ elif page == "Account":
             )
             if st.button(t("Save", "Opslaan"), key="account_save_notifications",
                          width="stretch", type="primary"):
-                if not is_guest:
-                    persist_active_user_state()
+                persist_active_user_state()
                 st.toast(t("Notification settings saved.", "Meldingsinstellingen opgeslagen."), icon="✅")
 
         # ─── 📊 Overzicht ─────────────────────────────────────────────
@@ -4342,9 +6014,9 @@ elif page == "Account":
             )
             if st.button(t("Save settings", "Instellingen opslaan"), key="account_save_preferences",
                          width="stretch", type="primary"):
-                if not is_guest:
-                    persist_active_user_state()
+                persist_active_user_state()
                 st.toast(t("Settings saved.", "Instellingen opgeslagen."), icon="✅")
+                st.rerun()
             st.divider()
             st.subheader("🔐 " + t("Security", "Beveiliging"))
             pw_col1, pw_col2 = st.columns(2)
@@ -4402,15 +6074,13 @@ elif page == "Account":
                     _new_plan = ("Pro" if _cur_plan == "Starter"
                                  else "Enterprise" if _cur_plan == "Pro" else _cur_plan)
                     st.session_state.subscription_plan = _new_plan
-                    if not is_guest:
-                        persist_active_user_state()
+                    persist_active_user_state()
                     st.toast(t("Plan upgraded.", "Plan geupgrade."), icon="🚀")
                     st.rerun()
             with sub_col2:
                 if st.button(t("Save plan", "Plan opslaan"), key="account_save_plan",
                              width="stretch"):
-                    if not is_guest:
-                        persist_active_user_state()
+                    persist_active_user_state()
                     st.toast(t("Plan saved.", "Plan opgeslagen."), icon="✅")
             invoice_df = pd.DataFrame(st.session_state.get("invoice_history", []))
             if not invoice_df.empty:
@@ -4523,16 +6193,31 @@ elif page == "Settings":
         st.markdown('</div>', unsafe_allow_html=True)
 
         st.markdown('<div class="settings-section">', unsafe_allow_html=True)
-        st.subheader(t("Language & Simulation", "Taal & Simulatie"))
+        st.subheader(t("Language, Theme & Simulation", "Taal, thema & simulatie"))
 
         if 'language' not in st.session_state:
             st.session_state.language = 'EN'
+        if 'theme_preference' not in st.session_state:
+            st.session_state.theme_preference = 'Dark'
 
-        gen_col1, gen_col2 = st.columns(2)
+        gen_col1, gen_col2, gen_col3 = st.columns(3)
         with gen_col1:
             lang = st.selectbox("Language / Taal", ['EN', 'NL'], index=0 if st.session_state.language == 'EN' else 1)
-            st.session_state.language = lang
+            if st.session_state.language != lang:
+                st.session_state.language = lang
+                persist_active_user_state()
+                st.rerun()
         with gen_col2:
+            selected_theme = st.selectbox(
+                t("Theme", "Thema"),
+                ["Dark", "Light"],
+                index=0 if st.session_state.get("theme_preference", "Dark") == "Dark" else 1,
+            )
+            if st.session_state.get("theme_preference", "Dark") != selected_theme:
+                st.session_state.theme_preference = selected_theme
+                persist_active_user_state()
+                st.rerun()
+        with gen_col3:
             st.session_state.refresh_rate = st.slider(
                 t("Data update interval (seconds)", "Data update interval (seconden)"),
                 1,
@@ -4571,6 +6256,8 @@ elif page == "Settings":
             st.session_state.last_current_values = {
                 f"current_{i}": 0.0 for i in range(1, new_machines + 1)
             }
+            st.session_state.dashboard_visible_machines = list(range(1, new_machines + 1))
+            st.session_state.dashboard_machine_order = list(range(1, new_machines + 1))
             st.success(t("Simulation updated.", "Simulatie bijgewerkt."))
 
         st.caption(t("Machine Names", "Machine namen"))
@@ -4579,6 +6266,224 @@ elif page == "Settings":
                 f"Machine {i+1}",
                 value=st.session_state.machine_names[i]
             )
+
+        st.divider()
+        st.caption(t("Advanced settings are grouped below for faster navigation.", "Geavanceerde instellingen zijn hieronder gegroepeerd voor sneller gebruik."))
+        focus_section = st.selectbox(
+            t("Focus section", "Focus-sectie"),
+            [
+                "All",
+                t("Dashboard", "Dashboard"),
+                t("Alerts", "Meldingen"),
+                t("Theme / UI", "Thema / UI"),
+                t("AI", "AI"),
+                t("Data", "Data"),
+                t("Machines", "Machines"),
+                t("Region", "Regio"),
+                t("Privacy", "Privacy"),
+                t("Quick actions", "Quick actions"),
+                t("Experience", "Ervaring"),
+            ],
+            key="settings_general_focus",
+        )
+
+        if focus_section in ["All", t("Dashboard", "Dashboard")]:
+            with st.expander("📊 " + t("Dashboard customization", "Dashboard aanpassen"), expanded=True):
+                machine_options = [
+                    (
+                        idx + 1,
+                        f"M{idx + 1} — {st.session_state.machine_names[idx] if idx < len(st.session_state.machine_names) else f'Machine {idx+1}'}"
+                    )
+                    for idx in range(st.session_state.num_machines)
+                ]
+                option_map = {label: idx for idx, label in machine_options}
+                default_visible_labels = [
+                    label for idx, label in machine_options
+                    if idx in set(get_ordered_visible_machine_indices(st.session_state.num_machines))
+                ]
+                selected_visible_labels = st.multiselect(
+                    t("Visible machines", "Zichtbare machines"),
+                    options=[label for _, label in machine_options],
+                    default=default_visible_labels,
+                    key="settings_visible_machine_labels",
+                )
+                ordered_labels = st.multiselect(
+                    t("Machine order (select in desired order)", "Machinevolgorde (selecteer in gewenste volgorde)"),
+                    options=[label for _, label in machine_options],
+                    default=[label for label in selected_visible_labels if label in [opt for _, opt in machine_options]],
+                    key="settings_machine_order_labels",
+                )
+                st.session_state.dashboard_visible_machines = [option_map[label] for label in selected_visible_labels if label in option_map]
+                st.session_state.dashboard_machine_order = [option_map[label] for label in ordered_labels if label in option_map]
+                dcol1, dcol2, dcol3 = st.columns(3)
+                with dcol1:
+                    st.session_state.dashboard_show_snapshot_chart = st.checkbox(t("Show machine snapshot", "Toon machine-snapshot"), value=bool(st.session_state.get("dashboard_show_snapshot_chart", True)), key="settings_show_snapshot")
+                with dcol2:
+                    st.session_state.dashboard_show_realtime_panel = st.checkbox(t("Show realtime panel", "Toon realtime panel"), value=bool(st.session_state.get("dashboard_show_realtime_panel", True)), key="settings_show_realtime")
+                with dcol3:
+                    st.session_state.dashboard_show_history_chart = st.checkbox(t("Show history chart", "Toon geschiedenisgrafiek"), value=bool(st.session_state.get("dashboard_show_history_chart", True)), key="settings_show_history_chart")
+
+        if focus_section in ["All", t("Alerts", "Meldingen")]:
+            with st.expander("🔔 " + t("Alert settings", "Meldingen instellen"), expanded=(focus_section != "All")):
+                st.session_state.alert_threshold_watt = st.slider(
+                    t("Alert threshold (W)", "Meldingsdrempel (W)"),
+                    min_value=100,
+                    max_value=6000,
+                    value=int(st.session_state.get("alert_threshold_watt", 1000)),
+                    step=50,
+                    key="settings_alert_threshold_watt",
+                )
+                acol1, acol2 = st.columns(2)
+                with acol1:
+                    st.session_state.alert_type_fault = st.checkbox(t("Fault alerts", "Storingmeldingen"), value=bool(st.session_state.get("alert_type_fault", True)), key="settings_alert_type_fault")
+                with acol2:
+                    st.session_state.alert_type_maintenance = st.checkbox(t("Maintenance alerts", "Onderhoudsmeldingen"), value=bool(st.session_state.get("alert_type_maintenance", True)), key="settings_alert_type_maintenance")
+                for i in range(1, st.session_state.num_machines + 1):
+                    current_map = dict(st.session_state.get("alert_enabled_by_machine", {}))
+                    machine_label = st.session_state.machine_names[i - 1] if i - 1 < len(st.session_state.machine_names) else f"Machine {i}"
+                    current_map[str(i)] = st.checkbox(
+                        t(f"Alerts for {machine_label}", f"Meldingen voor {machine_label}"),
+                        value=bool(current_map.get(str(i), True)),
+                        key=f"settings_alert_machine_{i}",
+                    )
+                    st.session_state.alert_enabled_by_machine = current_map
+
+        if focus_section in ["All", t("Theme / UI", "Thema / UI")]:
+            with st.expander("🎨 " + t("Theme / UI", "Thema / UI"), expanded=(focus_section != "All")):
+                accent_color = st.color_picker(
+                    t("Accent color", "Accentkleur"),
+                    value=str(st.session_state.get("ui_accent_color", "#3b82f6"))
+                )
+                if accent_color != st.session_state.get("ui_accent_color"):
+                    st.session_state.ui_accent_color = accent_color
+                    persist_active_user_state()
+                    st.rerun()
+                
+                ui_col1, ui_col2 = st.columns(2)
+                with ui_col1:
+                    density_choice = st.selectbox(
+                        t("Density", "Dichtheid"),
+                        ["Comfortable", "Compact"],
+                        index=0 if st.session_state.get("ui_density", "Comfortable") == "Comfortable" else 1
+                    )
+                    if density_choice != st.session_state.get("ui_density"):
+                        st.session_state.ui_density = density_choice
+                        persist_active_user_state()
+                        st.rerun()
+                
+                with ui_col2:
+                    mobile_compact = st.checkbox(
+                        t("Mobile compact mode", "Mobiele compacte modus"),
+                        value=bool(st.session_state.get("ui_mobile_compact", False))
+                    )
+                    if mobile_compact != st.session_state.get("ui_mobile_compact"):
+                        st.session_state.ui_mobile_compact = mobile_compact
+                        persist_active_user_state()
+                        st.rerun()
+
+        if focus_section in ["All", t("AI", "AI")]:
+            with st.expander("🤖 " + t("AI behavior", "AI gedrag"), expanded=(focus_section != "All")):
+                ai_col1, ai_col2, ai_col3 = st.columns(3)
+                with ai_col1:
+                    st.session_state.ai_response_style = st.selectbox(t("Answer length", "Antwoordlengte"), ["Short", "Detailed"], index=1 if st.session_state.get("ai_response_style", "Detailed") == "Detailed" else 0, key="settings_ai_response_style")
+                with ai_col2:
+                    st.session_state.ai_technical_level = st.selectbox(t("Technical level", "Technisch niveau"), ["Simple", "Expert"], index=0 if st.session_state.get("ai_technical_level", "Simple") == "Simple" else 1, key="settings_ai_technical_level")
+                with ai_col3:
+                    st.session_state.ai_auto_advice = st.checkbox(t("Auto advice", "Automatisch advies"), value=bool(st.session_state.get("ai_auto_advice", True)), key="settings_ai_auto_advice")
+
+        if focus_section in ["All", t("Data", "Data")]:
+            with st.expander("📈 " + t("Data settings", "Data instellingen"), expanded=(focus_section != "All")):
+                data_col1, data_col2, data_col3 = st.columns(3)
+                with data_col1:
+                    st.session_state.data_time_period = st.selectbox(t("Time period", "Tijdsperiode"), ["1h", "1d", "1w"], index=["1h", "1d", "1w"].index(st.session_state.get("data_time_period", "1h")), key="settings_data_time_period")
+                with data_col2:
+                    st.session_state.data_update_mode = st.selectbox(t("Update mode", "Update mode"), ["live", "per_minute"], index=0 if st.session_state.get("data_update_mode", "live") == "live" else 1, key="settings_data_update_mode")
+                with data_col3:
+                    st.session_state.data_unit = st.selectbox(t("Units", "Eenheden"), ["W", "kW"], index=0 if st.session_state.get("data_unit", "W") == "W" else 1, key="settings_data_unit")
+                st.session_state.refresh_rate = 1 if st.session_state.get("data_update_mode") == "live" else 60
+
+        if focus_section in ["All", t("Machines", "Machines")]:
+            with st.expander("🏷️ " + t("Machine personalization", "Machines personaliseren"), expanded=(focus_section != "All")):
+                machine_colors = dict(st.session_state.get("machine_colors", {}))
+                machine_groups = dict(st.session_state.get("machine_groups", {}))
+                for i in range(st.session_state.num_machines):
+                    m_name = st.session_state.machine_names[i]
+                    pcol1, pcol2 = st.columns([1, 1])
+                    with pcol1:
+                        machine_colors[m_name] = st.color_picker(t(f"Color {m_name}", f"Kleur {m_name}"), value=machine_colors.get(m_name, "#3b82f6"), key=f"settings_machine_color_{i}")
+                    with pcol2:
+                        machine_groups[m_name] = st.text_input(t(f"Group {m_name}", f"Groep {m_name}"), value=machine_groups.get(m_name, "Werkplaats"), key=f"settings_machine_group_{i}")
+                st.session_state.machine_colors = machine_colors
+                st.session_state.machine_groups = machine_groups
+
+        if focus_section in ["All", t("Quick actions", "Quick actions")]:
+            with st.expander("⚡ " + t("Quick actions", "Quick actions"), expanded=(focus_section != "All")):
+                q1, q2, q3 = st.columns(3)
+                with q1:
+                    if st.button(t("Check everything", "Check alles"), key="settings_quick_check_all", width="stretch"):
+                        st.session_state.page = "AI Insights"
+                        st.session_state.ai_assistant_open = True
+                        st.rerun()
+                with q2:
+                    if st.button(t("Reset filters", "Reset filters"), key="settings_quick_reset_filters", width="stretch"):
+                        st.session_state.history_filter_type = ["All"]
+                        st.session_state.history_sort = t("Newest First", "Nieuwste eerst")
+                        st.rerun()
+                with q3:
+                    if st.button(t("Focus problems", "Focus op problemen"), key="settings_quick_focus_problems", width="stretch"):
+                        st.session_state.page = "History"
+                        st.session_state.history_filter_type = ["Anomaly", "Bottleneck"]
+                        st.rerun()
+
+        if focus_section in ["All", t("Region", "Regio")]:
+            with st.expander("🌐 " + t("Language & region", "Taal & regio"), expanded=(focus_section != "All")):
+                lr1, lr2 = st.columns(2)
+                with lr1:
+                    st.session_state.date_format = st.selectbox(t("Date format", "Datumformaat"), ["DD-MM-YYYY", "YYYY-MM-DD"], index=0 if st.session_state.get("date_format", "DD-MM-YYYY") == "DD-MM-YYYY" else 1, key="settings_date_format")
+                with lr2:
+                    st.session_state.timezone_name = st.selectbox(t("Timezone", "Tijdzone"), ["Europe/Amsterdam", "UTC"], index=0 if st.session_state.get("timezone_name", "Europe/Amsterdam") == "Europe/Amsterdam" else 1, key="settings_timezone")
+
+        if focus_section in ["All", t("Privacy", "Privacy")]:
+            with st.expander("🔒 " + t("Account / privacy", "Account / privacy"), expanded=(focus_section != "All")):
+                pv1, pv2 = st.columns(2)
+                with pv1:
+                    st.session_state.privacy_data_sharing = st.checkbox(t("Allow data sharing", "Data delen toestaan"), value=bool(st.session_state.get("privacy_data_sharing", False)), key="settings_privacy_data_sharing")
+                with pv2:
+                    st.session_state.ai_history_enabled = st.checkbox(t("Save AI history", "AI-geschiedenis opslaan"), value=bool(st.session_state.get("ai_history_enabled", True)), key="settings_ai_history_enabled")
+                export_payload = {
+                    "timestamp": pd.Timestamp.now().isoformat(),
+                    "mode": st.session_state.get("mode", "Simulation"),
+                    "machine_names": st.session_state.get("machine_names", []),
+                    "event_history": st.session_state.get("event_history", []),
+                    "anomalies": st.session_state.get("anomalies", []),
+                    "bottlenecks": st.session_state.get("bottlenecks", []),
+                }
+                st.download_button(
+                    label=t("Export data (JSON)", "Exporteer data (JSON)"),
+                    data=json.dumps(export_payload, ensure_ascii=False, indent=2),
+                    file_name="machine_monitor_export.json",
+                    mime="application/json",
+                    key="settings_export_data",
+                )
+
+        if focus_section in ["All", t("Experience", "Ervaring")]:
+            with st.expander("📱 " + t("Usage experience", "Gebruikservaring"), expanded=(focus_section != "All")):
+                ux1, ux2, ux3 = st.columns(3)
+                with ux1:
+                    st.session_state.ui_animations_enabled = st.checkbox(t("Enable animations", "Animaties aan"), value=bool(st.session_state.get("ui_animations_enabled", True)), key="settings_ui_animations_enabled")
+                with ux2:
+                    st.session_state.ui_sidebar_default = st.selectbox(t("Sidebar default", "Sidebar standaard"), ["Open", "Closed"], index=0 if st.session_state.get("ui_sidebar_default", "Open") == "Open" else 1, key="settings_ui_sidebar_default")
+                with ux3:
+                    st.caption(t("Compact mode is optimized for mobile screens.", "Compacte modus is geoptimaliseerd voor mobiel."))
+
+        st.session_state.animation_tick_ms = 300 if st.session_state.get("ui_animations_enabled", True) else 1200
+        if not st.session_state.get("ai_history_enabled", True):
+            st.session_state.ai_conversation_history = []
+
+        if st.button(t("Save all settings", "Alle instellingen opslaan"), key="settings_save_all_extended", type="primary", width="stretch"):
+            persist_active_user_state()
+            st.toast(t("Settings saved.", "Instellingen opgeslagen."), icon="✅")
+            st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
     if settings_active_tab == "cloud":
@@ -4675,23 +6580,23 @@ elif page == "Settings":
             st.markdown(
                 f"""
                 <div style="
-                    background: linear-gradient(130deg, rgba(15,23,42,0.96) 0%, rgba(17,24,39,0.96) 55%, rgba(37,99,235,0.18) 100%);
-                    border: 1px solid rgba(59,130,246,0.18);
+                    background: {theme_tokens['hero_gradient']};
+                    border: 1px solid {theme_tokens['border']};
                     border-radius: 20px;
                     padding: 20px 24px;
                     margin-bottom: 18px;
                     display:flex;align-items:center;gap:18px;
-                    box-shadow: 0 4px 24px rgba(2,8,23,0.24), inset 0 1px 0 rgba(148,163,184,0.06);
+                    box-shadow: 0 8px 24px {theme_tokens['accent_glow']}, inset 0 1px 0 rgba(148,163,184,0.08);
                 ">
                     <div style="
                         width:52px;height:52px;border-radius:50%;flex-shrink:0;
-                        background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+                        background: linear-gradient(135deg, {theme_tokens['accent']} 0%, #22d3ee 100%);
                         display:flex;align-items:center;justify-content:center;
                         font-size:1.25rem;font-weight:800;color:#fff;
-                        box-shadow: 0 2px 12px rgba(37,99,235,0.4);
+                        box-shadow: 0 2px 12px {theme_tokens['accent_glow']};
                     ">{_initials}</div>
                     <div>
-                        <div style="font-size:1.15rem;font-weight:700;color:#f1f5f9;line-height:1.2;">
+                        <div style="font-size:1.15rem;font-weight:700;color:{theme_tokens['text']};line-height:1.2;">
                             {_pname} {_company_html}
                         </div>
                         <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
@@ -4874,6 +6779,62 @@ elif page == "Settings":
 
 elif page=="AI Insights":
     st.title(t("⌬ AI Insights & Recommendations", "⌬ AI Inzichten & Aanbevelingen"))
+    
+    st.markdown(
+        f"""
+        <div style="background: linear-gradient(135deg, {theme_tokens['accent']}15, {theme_tokens['accent']}08); border: 2px solid {theme_tokens['accent']}; border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 24px;">
+            <div style="font-size: 3rem; margin-bottom: 12px;">🔨</div>
+            <h2 style="color: {theme_tokens['text']}; margin: 12px 0;">{t('Coming Soon', 'Binnenkort beschikbaar')}</h2>
+            <p style="color: {theme_tokens['muted']}; font-size: 1.05rem; margin: 8px 0;">
+                {t('AI Insights is currently under construction and will be available in the next release.', 'AI Inzichten is momenteel in aanbouw en zal beschikbaar zijn in de volgende update.')}
+            </p>
+            <p style="color: {theme_tokens['subtle']}; font-size: 0.95rem; margin-top: 16px;">
+                {t('Expected availability: Q3 2026', 'Verwachte beschikbaarheid: Q3 2026')}
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    
+    st.info(t("Please visit the Dashboard to monitor your machines.", "Bezoek het Dashboard om uw machines te controleren."))
+    if st.button(t("Go to Dashboard", "Ga naar Dashboard"), type="primary", key="ai_to_dashboard"):
+        st.session_state.page = "Dashboard"
+        st.rerun()
+    st.stop()
+
+    if "ai_assistant_open" not in st.session_state:
+        st.session_state.ai_assistant_open = True
+    if "ai_assistant_result" not in st.session_state:
+        st.session_state.ai_assistant_result = None
+    if "ai_conversation_history" not in st.session_state:
+        st.session_state.ai_conversation_history = []
+
+    def run_ai_assistant_query(question_text):
+        """Always return a usable assistant result, even if parsing fails."""
+        try:
+            conversation_history = st.session_state.get("ai_conversation_history", [])
+            result = resolve_ai_assistant_result(question_text, conversation_history)
+            if isinstance(result, dict) and result.get("message"):
+                # Store in conversation history
+                if bool(st.session_state.get("ai_history_enabled", True)):
+                    st.session_state.ai_conversation_history.append({
+                        "question": question_text,
+                        "answer": result.get("message", ""),
+                        "timestamp": pd.Timestamp.now().isoformat()
+                    })
+                return result
+        except Exception:
+            pass
+        return {
+            "message": t(
+                "I could not process that question yet. Try: 'status machine 2', 'check all machines', or 'predict maintenance'.",
+                "Ik kon die vraag nog niet verwerken. Probeer: 'status machine 2', 'check alle machines' of 'voorspel onderhoud'."
+            ),
+            "target_page": "Dashboard",
+            "target_label": t("Open live dashboard", "Open live dashboard"),
+            "target_state": {},
+            "chart_machine": None,
+        }
 
     st.markdown(
         f"""
@@ -4887,6 +6848,96 @@ elif page=="AI Insights":
         """,
         unsafe_allow_html=True,
     )
+
+    st.markdown('<div class="page-section">', unsafe_allow_html=True)
+    ai_top_col1, ai_top_col2 = st.columns([3, 1])
+    with ai_top_col1:
+        st.subheader(t("AI Assistant", "AI Assistent"))
+        st.caption(t("Ask about machine status, anomalies, trend predictions, live connection, settings, or history.", "Vraag naar machinestatus, afwijkingen, trendvoorspellingen, live verbinding, instellingen of history."))
+        st.caption(t(
+            "Uses external AI when OPENAI_API_KEY is configured; otherwise local fallback logic is used.",
+            "Gebruikt externe AI wanneer OPENAI_API_KEY is ingesteld; anders wordt lokale fallback-logica gebruikt."
+        ))
+    with ai_top_col2:
+        if st.button(
+            t("Open assistant", "Open assistent") if not st.session_state.ai_assistant_open else t("Hide assistant", "Verberg assistent"),
+            key="ai_assistant_toggle",
+            width="stretch",
+            type="secondary",
+        ):
+            st.session_state.ai_assistant_open = not st.session_state.ai_assistant_open
+            st.rerun()
+
+    if st.session_state.ai_assistant_open:
+        with st.form("ai_assistant_form", clear_on_submit=False):
+            q = st.text_input(t("Ask your question", "Stel je vraag"), key="ai_assistant_question")
+            ask_col1, ask_col2 = st.columns([1, 1])
+            with ask_col1:
+                submitted = st.form_submit_button(t("Get answer", "Krijg antwoord"), type="primary", use_container_width=True)
+            with ask_col2:
+                example_submit = st.form_submit_button(t("Examples", "Voorbeelden"), use_container_width=True)
+
+        if submitted:
+            st.session_state.ai_assistant_result = run_ai_assistant_query(q)
+        if example_submit:
+            st.session_state.ai_assistant_result = {
+                "message": t(
+                    "**Examples**\n- status machine 2\n- check all machines\n- why is usage higher\n- predict maintenance\n- history summary\n- live status",
+                    "**Voorbeelden**\n- status machine 2\n- check alle machines\n- waarom is verbruik hoger\n- voorspel onderhoud\n- history samenvatting\n- live status"
+                ),
+                "target_page": None,
+                "target_label": None,
+                "target_state": {},
+                "chart_machine": None,
+            }
+
+        quick_ai1, quick_ai2, quick_ai3, quick_ai4 = st.columns(4)
+        with quick_ai1:
+            if st.button(t("Check all machines", "Check alle machines"), key="ai_quick_all", width="stretch"):
+                st.session_state.ai_assistant_result = run_ai_assistant_query("check all machines")
+        with quick_ai2:
+            if st.button(t("See alerts", "Zie storingen"), key="ai_quick_alerts", width="stretch"):
+                st.session_state.ai_assistant_result = run_ai_assistant_query("anomalies and alerts")
+        with quick_ai3:
+            if st.button(t("Predict maintenance", "Voorspel onderhoud"), key="ai_quick_maintenance", width="stretch"):
+                st.session_state.ai_assistant_result = run_ai_assistant_query("predict maintenance")
+        with quick_ai4:
+            if st.button(t("Live status", "Live status"), key="ai_quick_live", width="stretch"):
+                st.session_state.ai_assistant_result = run_ai_assistant_query("live status")
+
+        result = st.session_state.get("ai_assistant_result") or {}
+        if result.get("message"):
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.markdown(result.get("message", ""))
+            target_page = result.get("target_page")
+            target_label = result.get("target_label")
+            if target_page and target_label:
+                if st.button(target_label, key="ai_assistant_open_target", width="stretch", type="secondary"):
+                    for state_key, state_value in dict(result.get("target_state") or {}).items():
+                        st.session_state[state_key] = state_value
+                    st.session_state.page = target_page
+                    st.rerun()
+            chart_machine = result.get("chart_machine")
+            if chart_machine:
+                render_ai_assistant_machine_chart(chart_machine, df)
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Display conversation history
+        conversation_history = st.session_state.get("ai_conversation_history", [])
+        if conversation_history and len(conversation_history) > 0:
+            with st.expander(t("💬 Conversation History", "💬 Gespreksgeschiedenis"), expanded=False):
+                for i, turn in enumerate(reversed(conversation_history[-10:]), 1):  # Show last 10
+                    st.markdown(f"**Q{len(conversation_history)-i}:** {turn.get('question', '')}")
+                    st.markdown(f"**A{len(conversation_history)-i}:** {turn.get('answer', '')}")
+                    if i < len(conversation_history):
+                        st.divider()
+        
+        # Button to clear conversation history
+        if conversation_history and st.button(t("Clear conversation history", "Verwijder gespreksgeschiedenis"), key="ai_clear_history"):
+            st.session_state.ai_conversation_history = []
+            st.rerun()
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # --- Overview KPIs ---
     st.markdown('<div class="page-section">', unsafe_allow_html=True)
@@ -4972,15 +7023,49 @@ elif page=="AI Insights":
             advice = t("Monitor efficiency and cooling systems.", "Controleer efficiëntie en koeling.")
             severity = "warning"
 
-        # Track anomalies and bottlenecks in state for repeatable insights
-        if severity == "error" or anomaly_score > 2.5:
+        sparkline_points = [float(v) for v in series.tail(24).tolist()] if not series.empty else []
+        incident_anchor_ts = None
+        if "timestamp" in df.columns and len(df.index) > 0:
+            try:
+                incident_anchor_ts = pd.to_datetime(df["timestamp"].iloc[-1], errors="coerce")
+                if not pd.isna(incident_anchor_ts):
+                    incident_anchor_ts = incident_anchor_ts.isoformat()
+                else:
+                    incident_anchor_ts = None
+            except Exception:
+                incident_anchor_ts = None
+
+        # Track anomalies and bottlenecks with cooldown so one issue doesn't spam history.
+        machine_alert_flags = dict(st.session_state.get("alert_enabled_by_machine", {}))
+        machine_alert_enabled = bool(machine_alert_flags.get(str(i), True))
+        alert_threshold_watt = float(st.session_state.get("alert_threshold_watt", 1000))
+        current_watt = float(cur) * 230.0
+        avg_watt = float(avg) * 230.0
+
+        if machine_alert_enabled and bool(st.session_state.get("alert_type_fault", True)) and (severity == "error" or anomaly_score > 2.5) and current_watt >= alert_threshold_watt:
             anomaly_msg = f"M{i}:{status}:{anomaly_score:.2f}"
-            st.session_state.anomalies.append(anomaly_msg)
-            log_event("Anomaly", f"Machine {i} - {status} (Score: {anomaly_score:.2f})")
-        if severity == "warning" and avg > 4:
+            logged = log_event(
+                "Anomaly",
+                f"Machine {i} - {status} (Score: {anomaly_score:.2f})",
+                dedupe_key=f"anomaly:M{i}:{status}",
+                cooldown_s=120,
+                meta={"machine": i, "sparkline_points": sparkline_points, "incident_anchor_ts": incident_anchor_ts},
+            )
+            if logged:
+                st.session_state.anomalies.insert(0, anomaly_msg)
+                st.session_state.anomalies = st.session_state.anomalies[:300]
+        if machine_alert_enabled and bool(st.session_state.get("alert_type_maintenance", True)) and severity == "warning" and avg > 4 and avg_watt >= alert_threshold_watt:
             bottleneck_msg = f"M{i}:{avg:.2f}"
-            st.session_state.bottlenecks.append(bottleneck_msg)
-            log_event("Bottleneck", f"Machine {i} - High Load ({avg:.2f}A)")
+            logged = log_event(
+                "Bottleneck",
+                f"Machine {i} - High Load ({avg:.2f}A)",
+                dedupe_key=f"bottleneck:M{i}",
+                cooldown_s=180,
+                meta={"machine": i, "sparkline_points": sparkline_points, "incident_anchor_ts": incident_anchor_ts},
+            )
+            if logged:
+                st.session_state.bottlenecks.insert(0, bottleneck_msg)
+                st.session_state.bottlenecks = st.session_state.bottlenecks[:300]
 
 
         insights.append({
@@ -5098,8 +7183,36 @@ elif page=="AI Insights":
     else:
         st.success(t("Stable usage trend.", "Stabiele trend."))
 
+elif page == "Webshop":
+    st.title(t("🛒 Webshop", "🛒 Webshop"))
+    
+    st.markdown(
+        f"""
+        <div style="background: linear-gradient(135deg, {theme_tokens['accent']}15, {theme_tokens['accent']}08); border: 2px solid {theme_tokens['accent']}; border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 24px;">
+            <div style="font-size: 3rem; margin-bottom: 12px;">🔨</div>
+            <h2 style="color: {theme_tokens['text']}; margin: 12px 0;">{t('Coming Soon', 'Binnenkort beschikbaar')}</h2>
+            <p style="color: {theme_tokens['muted']}; font-size: 1.05rem; margin: 8px 0;">
+                {t('We are building an integrated webshop for hardware kits, licenses, and upgrades.', 'We bouwen een geïntegreerde webshop voor hardwarekits, licenties en upgrades.')}
+            </p>
+            <p style="color: {theme_tokens['subtle']}; font-size: 0.95rem; margin-top: 16px;">
+                {t('Expected launch: Q3 2026', 'Verwachte lancering: Q3 2026')}
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    
+    st.info(t("Contact us for hardware and license inquiries.", "Neem contact met ons op voor vragen over hardware en licenties."))
+    if st.button(t("Go to Dashboard", "Ga naar Dashboard"), type="primary", key="webshop_to_dashboard"):
+        st.session_state.page = "Dashboard"
+        st.rerun()
+    st.stop()
+
 elif page == "History":
     st.title(t("⚙ Event History", "⚙ Gebeurenissen Geschiedenis"))
+    if "history_selected_event" not in st.session_state:
+        st.session_state.history_selected_event = None
+
     total_events = len(st.session_state.event_history)
     anomaties_count = len([e for e in st.session_state.event_history if e.get("type") == "Anomaly"])
     bottleneck_count = len([e for e in st.session_state.event_history if e.get("type") == "Bottleneck"])
@@ -5121,22 +7234,28 @@ elif page == "History":
 
     # Filter options
     st.markdown('<div class="history-section">', unsafe_allow_html=True)
-    col1, col2, col3 = st.columns(3)
-    with col1:
+    fcol1, fcol2, fcol3, fcol4 = st.columns([2, 2, 2, 2])
+    with fcol1:
         filter_type = st.multiselect(
             t("Filter by type", "Filter op type"),
             ["All", "Anomaly", "Bottleneck", "Connection", "System"],
             default=["All"],
             key="history_filter_type"
         )
-    with col2:
+    with fcol2:
+        machine_options = [t("All machines", "Alle machines")] + [
+            st.session_state.machine_names[i] if i < len(st.session_state.machine_names) else f"Machine {i+1}"
+            for i in range(NUM_MACHINES)
+        ]
+        filter_machine = st.selectbox(t("Filter by machine", "Filter op machine"), machine_options, key="history_filter_machine")
+    with fcol3:
         sort_option = st.selectbox(
             t("Sort", "Sorteren"),
             [t("Newest First", "Nieuwste eerst"), t("Oldest First", "Oudste eerst")],
             key="history_sort"
         )
-    with col3:
-        max_events = st.slider(t("Show events", "Toon gebeurtenissen"), 5, 100, 20, key="history_max")
+    with fcol4:
+        max_events = st.slider(t("Show events", "Toon gebeurtenissen"), 5, 100, 25, key="history_max")
     st.markdown('</div>', unsafe_allow_html=True)
 
     # Display events
@@ -5145,42 +7264,326 @@ elif page == "History":
     if len(st.session_state.event_history) == 0:
         st.info(t("No events recorded yet", "Nog geen gebeurtenissen opgeslagen"))
     else:
-        # Reverse if oldest first
         events_to_show = st.session_state.event_history.copy()
         if sort_option == t("Oldest First", "Oudste eerst"):
             events_to_show = events_to_show[::-1]
 
-        # Filter events
         if "All" not in filter_type:
             events_to_show = [e for e in events_to_show if e.get("type") in filter_type]
 
-        # Limit events
+        # Machine filter
+        selected_machine_label = filter_machine
+        if selected_machine_label != t("All machines", "Alle machines"):
+            # Match by machine index via machine_names
+            try:
+                machine_idx_filter = machine_options.index(selected_machine_label)  # 1-based after "All"
+                events_to_show = [e for e in events_to_show if e.get("machine") == machine_idx_filter]
+            except (ValueError, IndexError):
+                pass
+
+        total_filtered = len(events_to_show)
         events_to_show = events_to_show[:max_events]
 
-        # Display as cards
-        for event in events_to_show:
-            event_type = event.get("type", "System")
-            message = event.get("message", "")
-            timestamp = event.get("timestamp", "")
+        if total_filtered == 0:
+            st.info(t("No events match the current filter.", "Geen gebeurtenissen komen overeen met het huidige filter."))
+        else:
+            # Summary bar
+            shown = len(events_to_show)
+            st.caption(
+                t(f"Showing {shown} of {total_filtered} event(s)", f"{shown} van {total_filtered} gebeurtenis(sen) getoond")
+            )
 
-            # Color based on type
-            color = "#6366f1"  # blue
-            if event_type == "Anomaly":
-                color = "#ef4444"  # red
-            elif event_type == "Bottleneck":
-                color = "#f97316"  # orange
-            elif event_type == "Connection":
-                color = "#10b981"  # green
+            # Compact event rows
+            TYPE_COLORS = {
+                "Anomaly":    "#ef4444",
+                "Bottleneck": "#f97316",
+                "Connection": "#10b981",
+                "System":     "#6366f1",
+            }
+            TYPE_ICONS = {
+                "Anomaly":    "⚠",
+                "Bottleneck": "⬆",
+                "Connection": "⦿",
+                "System":     "ℹ",
+            }
 
-            st.markdown(f"""
-            <div class="history-event-card" style="border-left-color: {color};">
-                <div class="history-event-top">
-                    <span class="history-badge" style="color: {color}; border: 1px solid {color};">{event_type}</span>
-                    <span class="history-timestamp">{timestamp}</span>
-                </div>
-                <div class="history-message">{message}</div>
-            </div>
-            """, unsafe_allow_html=True)
+            current_date = None
+            for idx, event in enumerate(events_to_show):
+                event_type = event.get("type", "System")
+                message = event.get("message", "")
+                timestamp = event.get("timestamp", "")
+                machine_label = event.get("machine")
+                color = TYPE_COLORS.get(event_type, "#6366f1")
+                icon = TYPE_ICONS.get(event_type, "•")
+
+                ts_fmt = pd.to_datetime(timestamp, errors="coerce")
+                if not pd.isna(ts_fmt):
+                    try:
+                        ts_fmt = ts_fmt.tz_localize("UTC").tz_convert(st.session_state.get("timezone_name", "Europe/Amsterdam"))
+                    except Exception:
+                        pass
+                    if st.session_state.get("date_format", "DD-MM-YYYY") == "YYYY-MM-DD":
+                        event_date_str = ts_fmt.strftime("%Y-%m-%d")
+                    else:
+                        event_date_str = ts_fmt.strftime("%d-%m-%Y")
+                    time_part = ts_fmt.strftime("%H:%M:%S")
+                else:
+                    event_date_str = str(timestamp)[:10] if timestamp else ""
+                    time_part = str(timestamp)[11:19] if len(str(timestamp)) >= 19 else str(timestamp)
+
+                # Date separator
+                event_date = event_date_str
+                if event_date and event_date != current_date:
+                    current_date = event_date
+                    st.markdown(
+                        f"<div style='margin:14px 0 4px 0; font-size:0.75rem; font-weight:600; "
+                        f"color:#64748b; letter-spacing:0.06em; text-transform:uppercase;'>"
+                        f"{'📅 ' + event_date}</div>",
+                        unsafe_allow_html=True,
+                    )
+
+                machine_tag = (
+                    f"<span style='font-size:0.72rem; background:{color}18; color:{color}; "
+                    f"border:1px solid {color}55; border-radius:4px; padding:1px 6px; margin-right:6px;'>"
+                    f"M{machine_label}</span>"
+                    if machine_label is not None else ""
+                )
+
+                st.markdown(
+                    f"""<div style='display:flex; align-items:center; gap:10px; padding:6px 10px;
+                        border-left:3px solid {color}; border-radius:0 6px 6px 0;
+                        background:{color}0d; margin-bottom:4px; flex-wrap:wrap;'>
+                        <span style='font-size:0.78rem; font-weight:700; color:{color}; min-width:22px;'>{icon}</span>
+                        <span style='font-size:0.72rem; color:#94a3b8; min-width:60px;'>{time_part}</span>
+                        {machine_tag}
+                        <span style='font-size:0.82rem; color:inherit; flex:1;'>{message}</span>
+                    </div>""",
+                    unsafe_allow_html=True,
+                )
+
+                if event_type in ["Anomaly", "Bottleneck"]:
+                    if st.button(
+                        t("View analysis", "Bekijk analyse"),
+                        key=f"history_event_detail_{idx}_{timestamp}",
+                        type="secondary",
+                    ):
+                        selected_event = dict(event)
+                        detail_snapshot = build_incident_detail_snapshot(selected_event, st.session_state.get("df", pd.DataFrame()))
+                        if detail_snapshot:
+                            selected_event["detail_snapshot"] = detail_snapshot
+                        st.session_state.history_selected_event = selected_event
+                        st.rerun()
+
+        selected_event = st.session_state.get("history_selected_event")
+        if isinstance(selected_event, dict):
+            sel_type = str(selected_event.get("type", "System"))
+            sel_msg = str(selected_event.get("message", ""))
+            sel_machine = selected_event.get("machine")
+            sel_points = selected_event.get("sparkline_points", [])
+            detail_snapshot = selected_event.get("detail_snapshot")
+
+            st.markdown('<div class="history-section">', unsafe_allow_html=True)
+            title_col, close_col = st.columns([5, 1])
+            with title_col:
+                st.subheader(t("⌬ Problem Analysis", "⌬ Probleemanalyse"))
+            with close_col:
+                if st.button(t("Close", "Sluiten"), key="history_close_detail", type="secondary", width="stretch"):
+                    st.session_state.history_selected_event = None
+                    st.rerun()
+
+            machine_idx = None
+            try:
+                machine_idx = int(sel_machine) if sel_machine is not None else None
+            except Exception:
+                machine_idx = None
+
+            fig_detail = go.Figure()
+            has_series = False
+            y_all = []
+
+            if isinstance(detail_snapshot, dict) and detail_snapshot.get("x") and detail_snapshot.get("y"):
+                snap_x = detail_snapshot["x"]
+                snap_y = detail_snapshot["y"]
+                incident_idx = int(detail_snapshot.get("incident_index", 0))
+                chart_color = "#ef4444" if sel_type == "Anomaly" else "#f97316"
+                machine_name = (
+                    st.session_state.machine_names[machine_idx - 1]
+                    if machine_idx and 0 < machine_idx <= len(st.session_state.machine_names)
+                    else f"Machine {machine_idx}"
+                )
+
+                y_all = snap_y
+                baseline_val = float(sum(snap_y) / max(len(snap_y), 1))
+
+                # Fill under line
+                fig_detail.add_trace(go.Scatter(
+                    x=snap_x, y=snap_y,
+                    mode="none",
+                    fill="tozeroy",
+                    fillcolor="rgba(239,68,68,0.09)" if sel_type == "Anomaly" else "rgba(249,115,22,0.09)",
+                    showlegend=False,
+                    hoverinfo="skip",
+                ))
+
+                # Main data line
+                fig_detail.add_trace(go.Scatter(
+                    x=snap_x, y=snap_y,
+                    mode="lines+markers",
+                    name=machine_name,
+                    line=dict(width=2.5, color=chart_color),
+                    marker=dict(size=4, color=chart_color),
+                    hovertemplate="%{y:.2f} A<extra>" + machine_name + "</extra>",
+                ))
+
+                # Baseline / avg reference line
+                fig_detail.add_hline(
+                    y=baseline_val,
+                    line=dict(dash="dash", color="#94a3b8", width=1.5),
+                    annotation_text=t(f"Avg {baseline_val:.2f}A", f"Gem. {baseline_val:.2f}A"),
+                    annotation_position="bottom right",
+                    annotation_font=dict(size=11, color="#94a3b8"),
+                )
+
+                # Incident marker (diamond)
+                if 0 <= incident_idx < len(snap_x):
+                    inc_x = snap_x[incident_idx]
+                    inc_y = snap_y[incident_idx]
+                    fig_detail.add_trace(go.Scatter(
+                        x=[inc_x], y=[inc_y],
+                        mode="markers",
+                        name=t("Problem moment", "Probleemmoment"),
+                        marker=dict(size=16, color="#f59e0b", symbol="diamond",
+                                    line=dict(width=2, color="#fff")),
+                        hovertemplate=f"<b>{t('Incident', 'Incident')}</b><br>%{{y:.2f}} A<extra></extra>",
+                    ))
+
+                    # Vertical line at incident
+                    fig_detail.add_vline(
+                        x=inc_x,
+                        line=dict(dash="dot", color="#f59e0b", width=1.5),
+                        annotation_text=t("Incident", "Incident"),
+                        annotation_position="top",
+                        annotation_font=dict(size=11, color="#f59e0b"),
+                    )
+
+                has_series = True
+
+            elif isinstance(sel_points, list) and len(sel_points) > 1:
+                numeric_fb = [float(v) for v in sel_points if isinstance(v, (int, float))]
+                x_fb = list(range(len(numeric_fb)))
+                y_all = numeric_fb
+                baseline_fb = sum(numeric_fb[:-1]) / max(len(numeric_fb) - 1, 1)
+                inc_pos_fb = max(range(len(numeric_fb)), key=lambda i: abs(numeric_fb[i] - baseline_fb))
+                fb_color = "#ef4444" if sel_type == "Anomaly" else "#f97316"
+
+                fig_detail.add_trace(go.Scatter(
+                    x=x_fb, y=numeric_fb,
+                    mode="none", fill="tozeroy",
+                    fillcolor="rgba(239,68,68,0.09)" if sel_type == "Anomaly" else "rgba(249,115,22,0.09)",
+                    showlegend=False, hoverinfo="skip",
+                ))
+                fig_detail.add_trace(go.Scatter(
+                    x=x_fb, y=numeric_fb,
+                    mode="lines+markers",
+                    name=t("Snapshot", "Momentopname"),
+                    line=dict(width=2.5, color=fb_color),
+                    marker=dict(size=4, color=fb_color),
+                    hovertemplate="%{y:.2f} A<extra></extra>",
+                ))
+                fig_detail.add_hline(
+                    y=baseline_fb,
+                    line=dict(dash="dash", color="#94a3b8", width=1.5),
+                    annotation_text=t(f"Avg {baseline_fb:.2f}A", f"Gem. {baseline_fb:.2f}A"),
+                    annotation_position="bottom right",
+                    annotation_font=dict(size=11, color="#94a3b8"),
+                )
+                fig_detail.add_trace(go.Scatter(
+                    x=[x_fb[inc_pos_fb]], y=[numeric_fb[inc_pos_fb]],
+                    mode="markers",
+                    name=t("Problem moment", "Probleemmoment"),
+                    marker=dict(size=16, color="#f59e0b", symbol="diamond",
+                                line=dict(width=2, color="#fff")),
+                    hovertemplate=f"<b>{t('Incident', 'Incident')}</b><br>%{{y:.2f}} A<extra></extra>",
+                ))
+                fig_detail.add_vline(
+                    x=x_fb[inc_pos_fb],
+                    line=dict(dash="dot", color="#f59e0b", width=1.5),
+                    annotation_text=t("Incident", "Incident"),
+                    annotation_position="top",
+                    annotation_font=dict(size=11, color="#f59e0b"),
+                )
+                has_series = True
+
+            if has_series:
+                # Auto-scale Y with 20% headroom so the spike is visible
+                if y_all:
+                    y_min = max(0.0, min(y_all) - 0.3)
+                    y_max = max(y_all) * 1.25
+                else:
+                    y_min, y_max = 0, 8
+
+                fig_detail.update_layout(
+                    template=plotly_template,
+                    height=400,
+                    margin=dict(l=10, r=10, t=36, b=10),
+                    plot_bgcolor=plot_bg_color,
+                    paper_bgcolor=plot_bg_color,
+                    yaxis=dict(
+                        title=dict(text=t("Current (A)", "Stroom (A)"), font=dict(size=12)),
+                        range=[y_min, y_max],
+                        gridcolor=plot_grid_color,
+                        tickfont=dict(size=11),
+                        zeroline=False,
+                    ),
+                    xaxis=dict(
+                        title=dict(text=t("Time", "Tijd"), font=dict(size=12)),
+                        gridcolor=plot_grid_color,
+                        tickfont=dict(size=10),
+                        tickangle=-30,
+                    ),
+                    showlegend=True,
+                    legend=dict(
+                        orientation="h", yanchor="bottom", y=1.02,
+                        xanchor="left", x=0,
+                        font=dict(size=11),
+                        bgcolor=plot_legend_bg,
+                        bordercolor=plot_legend_border,
+                        borderwidth=1,
+                    ),
+                    hovermode="x unified",
+                )
+                st.plotly_chart(fig_detail, use_container_width=True, config={"displayModeBar": False, "displaylogo": False})
+                st.caption(
+                    t("◆ = problem moment  —  dashed line = average load before incident  —  window: 2 min before, 1 min after",
+                      "◆ = probleemmoment  —  stippellijn = gemiddelde belasting vóór incident  —  venster: 2 min vóór, 1 min erna")
+                )
+
+            score_match = re.search(r"Score:\s*([0-9]+\.[0-9]+)", sel_msg)
+            load_match = re.search(r"\(([0-9]+\.[0-9]+)A\)", sel_msg)
+            score_text = score_match.group(1) if score_match else "-"
+            load_text = load_match.group(1) if load_match else "-"
+
+            if sel_type == "Anomaly":
+                st.markdown(t(
+                    f"**What happened:** Unexpected behavior was detected for machine M{machine_idx or '?'} (anomaly score: {score_text}).",
+                    f"**Wat gebeurde er:** Onverwacht gedrag gedetecteerd voor machine M{machine_idx or '?'} (afwijkingsscore: {score_text})."
+                ))
+                st.markdown(t(
+                    "**How to improve:**\n- Check sensor wiring and calibration\n- Inspect for abrupt load changes or mechanical friction\n- Compare with previous stable shift and tune alert thresholds",
+                    "**Hoe verbeteren:**\n- Controleer sensorbekabeling en kalibratie\n- Inspecteer op plotselinge belasting of mechanische wrijving\n- Vergelijk met vorige stabiele shift en stel alarmdrempels bij"
+                ))
+            elif sel_type == "Bottleneck":
+                st.markdown(t(
+                    f"**What happened:** Sustained high load was detected for machine M{machine_idx or '?'} (avg load: {load_text}A).",
+                    f"**Wat gebeurde er:** Aanhoudend hoge belasting gedetecteerd voor machine M{machine_idx or '?'} (gem. belasting: {load_text}A)."
+                ))
+                st.markdown(t(
+                    "**How to improve:**\n- Redistribute work across parallel machines\n- Reduce cycle-time peaks with smoother feed rates\n- Plan preventive maintenance on bearings/cooling",
+                    "**Hoe verbeteren:**\n- Verdeel werk over parallelle machines\n- Verminder cycluspiek met gelijkmatigere toevoersnelheid\n- Plan preventief onderhoud op lagers/koeling"
+                ))
+
+            st.caption(t("Source event", "Brongebeurtenis") + f": {sel_msg}")
+            st.markdown('</div>', unsafe_allow_html=True)
 
     st.divider()
 
@@ -5197,6 +7600,7 @@ elif page == "History":
     st.divider()
     if st.button(t("Clear History", "Wis Geschiedenis"), type="secondary"):
         st.session_state.event_history = []
+        st.session_state.history_selected_event = None
         st.success(t("History cleared", "Geschiedenis gewist"))
         st.rerun()
 
@@ -5254,3 +7658,122 @@ try:
 except Exception:
     # FastAPI not installed -> ignore this optional websocket backend.
     pass
+
+
+# ============================================================================
+# PAGE RENDERING FUNCTIONS
+# ============================================================================
+
+def render_top_nav():
+    """Render top navigation and return current page."""
+    return st.session_state.get("page", "Dashboard")
+
+def render_dashboard_page():
+    """Dashboard page is rendered inline in main application section."""
+    pass
+
+def render_factory_analysis_page():
+    """Factory Analysis page is rendered inline in main application section."""
+    pass
+
+def render_history_page():
+    """History page is rendered inline in main application section."""
+    pass
+
+def render_settings_page():
+    """Settings page is rendered inline in main application section."""
+    pass
+
+def render_device_connection_page():
+    """Device Connection page is rendered inline in main application section."""
+    pass
+
+def render_platform_page():
+    """Platform page is rendered inline in main application section."""
+    pass
+
+def render_about_page():
+    """About page is rendered inline in main application section."""
+    pass
+
+def render_contact_page():
+    """Contact page is rendered inline in main application section."""
+    pass
+
+def render_faq_page():
+    """FAQ page is rendered inline in main application section."""
+    pass
+
+def render_support_page():
+    """Support page is rendered inline in main application section."""
+    pass
+
+def render_account_page():
+    """Account page is rendered inline in main application section."""
+    pass
+
+# ============================================================================
+# MAIN APPLICATION
+# ============================================================================
+
+# Initialize session state
+if 'page' not in st.session_state:
+    st.session_state.page = 'Dashboard'
+if 'mode' not in st.session_state:
+    st.session_state.mode = 'Simulation'
+if 'num_machines' not in st.session_state:
+    st.session_state.num_machines = 3
+if 'connected_devices' not in st.session_state:
+    st.session_state.connected_devices = []
+if 'device_connected' not in st.session_state:
+    st.session_state.device_connected = False
+
+# Inject CSS
+st.markdown(load_css(), unsafe_allow_html=True)
+
+# Get current page
+current_page = render_top_nav()
+page = st.session_state.get("page", "Dashboard")
+
+# Render based on page
+if page == "Dashboard":
+    render_dashboard_page()
+
+elif page == "Factory Analysis":
+    render_factory_analysis_page()
+
+elif page == "AI Insights":
+    st.info("🔨 AI Insights is under construction (Q2 2026)")
+
+elif page == "History":
+    render_history_page()
+
+elif page == "Settings":
+    render_settings_page()
+
+elif page == "Device Connection":
+    render_device_connection_page()
+
+elif page == "Platform":
+    render_platform_page()
+
+elif page == "About":
+    render_about_page()
+
+elif page == "Contact":
+    render_contact_page()
+
+elif page == "FAQ":
+    render_faq_page()
+
+elif page == "Support":
+    render_support_page()
+
+elif page == "Account":
+    render_account_page()
+
+else:
+    st.error(f"Unknown page: {page}")
+
+# Platform navigation sidebar
+render_platform_sidebar_nav()

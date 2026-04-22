@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"name": "esp32 machine moitor",
+			"path": "../Documents/PlatformIO/Projects/esp32 machine moitor"
+		}
+	],
+	"settings": {}
+}
